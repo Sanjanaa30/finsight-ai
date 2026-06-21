@@ -229,3 +229,7 @@ planned_guide.pdf
 dbt/target/
 dbt/dbt_packages/
 dbt/logs/
+
+# MLflow
+mlflow.db
+mlartifacts/

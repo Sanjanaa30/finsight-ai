@@ -28,7 +28,16 @@ RATE_LIMIT_SECONDS = 1.0  # be polite between queries
 # matches (e.g. a "war" TV drama) are excluded. Combined with SEARCH_IN below,
 # matching is restricted to the title+description, which kills most body-text
 # false positives. Tune these freely; they trade recall for precision.
-CATEGORY_QUERIES = {
+
+# Sports / entertainment terms that pollute finance queries -- some outlets file
+# sports-betting stories under crypto/markets. Excluded from every category.
+EXCLUDE = (
+    'NOT (football OR soccer OR "World Cup" OR esports OR NBA OR NFL OR cricket '
+    'OR "Premier League" OR Bundesliga OR Olympics OR movie OR film OR celebrity '
+    'OR Bayern OR "Real Madrid")'
+)
+
+_BASE_QUERIES = {
     "geopolitical": '(sanctions OR tariffs OR "trade war" OR "geopolitical") AND (economy OR market OR markets OR oil OR trade)',
     "commodities": '("crude oil" OR "oil prices" OR "gold prices" OR "natural gas" OR commodities) AND (price OR market OR futures OR supply)',
     "crypto": '(bitcoin OR ethereum OR solana OR cryptocurrency OR crypto) AND (price OR market OR trading OR token OR blockchain)',
@@ -36,6 +45,9 @@ CATEGORY_QUERIES = {
     "macro": '(inflation OR "interest rates" OR "Federal Reserve" OR "GDP growth" OR unemployment) AND (economy OR market OR policy OR rate)',
     "market": '("stock market" OR "S&P 500" OR Nasdaq OR "Dow Jones" OR "corporate earnings") AND (stocks OR shares OR investors OR trading)',
 }
+
+# Wrap each base query and exclude the sports/entertainment noise.
+CATEGORY_QUERIES = {cat: f"({q}) AND {EXCLUDE}" for cat, q in _BASE_QUERIES.items()}
 
 # Restrict keyword matching to these fields (NewsAPI default searches the body
 # too, which is the main source of off-topic matches).

@@ -46,6 +46,13 @@ def ingest(script: str) -> None:
     _run([PYTHON, f"ingestion/{script}"])
 
 
+@task(retries=1, retry_delay_seconds=30, log_prints=True)
+def ml_step(script: str) -> None:
+    """Run an ML script (e.g. FinBERT scoring) from the ml/ directory."""
+    get_run_logger().info("ML step: %s", script)
+    _run([PYTHON, f"ml/{script}"])
+
+
 @task(log_prints=True)
 def dbt_command(args: list[str]) -> None:
     """Run a dbt command against the project."""
@@ -63,12 +70,16 @@ def daily_pipeline() -> None:
     for f in futures:
         f.result()  # raises if any ingestion task ultimately failed
 
-    # 2. Transform: rebuild models. 3. Validate: run data-quality tests.
+    # 2. Score news sentiment (FinBERT) -> data/processed/news_scored.parquet.
+    #    Must run before dbt, since dbt's sentiment models read the scored file.
+    ml_step.submit("train_sentiment.py").result()
+
+    # 3. Transform: rebuild models. 4. Validate: run data-quality tests.
     run_future = dbt_command.submit(["run"])
     run_future.result()
     dbt_command.submit(["test"], wait_for=[run_future]).result()
 
-    logger.info("Pipeline complete: raw -> staging -> intermediate -> mart, tested.")
+    logger.info("Pipeline complete: raw -> sentiment -> staging -> mart, tested.")
 
 
 if __name__ == "__main__":

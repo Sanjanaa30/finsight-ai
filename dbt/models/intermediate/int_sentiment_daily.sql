@@ -1,12 +1,9 @@
--- Intermediate: daily news aggregates per category.
---
--- Phase 3 version is VOLUME-based: article_count per category per day. The
--- avg_sentiment column is a typed placeholder (null) that Phase 4 will fill once
--- FinBERT has scored each article. Building the structure now keeps the mart and
--- downstream models stable; only the values change later.
+-- Intermediate: daily news aggregates per category, now with real FinBERT
+-- sentiment (Phase 4). avg_sentiment is the mean P(positive)-P(negative) across
+-- a category's articles that day, in [-1, 1]. article_count is the daily volume.
 
-with news as (
-    select * from {{ ref('stg_news') }}
+with scored as (
+    select * from {{ ref('stg_news_scored') }}
 ),
 
 daily as (
@@ -14,8 +11,8 @@ daily as (
         published_date as date,
         category,
         count(*) as article_count,
-        cast(null as double) as avg_sentiment  -- filled in Phase 4 (FinBERT)
-    from news
+        avg(sentiment_score) as avg_sentiment
+    from scored
     group by published_date, category
 )
 

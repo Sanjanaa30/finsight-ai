@@ -19,7 +19,7 @@ categories**.
 | **1 — Setup** | Repo, structure, env, deps, Docker | ✅ Complete |
 | **2 — Data ingestion** | Multi-source ingestion → Parquet / text | ✅ 4 of 5 sources (Reddit deferred) |
 | **3 — Data engineering** | dbt models on DuckDB + Prefect orchestration | ✅ Complete |
-| 4 — Machine learning | Prophet forecast, FinBERT sentiment, anomaly detection, MLflow | ⬜ Planned |
+| **4 — Machine learning** | Volatility (HAR-RV) + Prophet, FinBERT sentiment, anomaly detection, MLflow | ✅ Complete |
 | 5 — AI engineering | RAG over SEC filings, MCP server, LangGraph agent | ⬜ Planned |
 | 6 — Dashboard + deploy | FastAPI + Streamlit 4-tab dashboard | ⬜ Planned |
 
@@ -29,7 +29,7 @@ categories**.
 
 **Data ingestion:** yfinance · NewsAPI · SEC EDGAR · FRED · (Reddit/PRAW planned)
 **Engineering:** dbt (dbt-duckdb) · DuckDB · Parquet (PyArrow) · Prefect · PostgreSQL · Qdrant (Docker)
-**ML (planned):** Prophet · FinBERT · Isolation Forest · MLflow
+**ML:** HAR-RV (volatility) · Prophet · FinBERT · Isolation Forest · scikit-learn · MLflow
 **AI (planned):** LangChain/LangGraph · MCP · sentence-transformers · OpenAI gpt-4o-mini
 **Serving (planned):** FastAPI · Streamlit
 **Tooling:** Python 3.13 · uv · loguru · pytest
@@ -71,13 +71,18 @@ finsight-ai/
 │       ├── intermediate/           # int_price_features, int_sentiment_daily (+ tests)
 │       └── marts/                  # fct_daily_signals (+ tests)
 ├── pipelines/flows/
-│   └── daily_pipeline.py           # Phase 3 — Prefect flow: ingest → dbt run → dbt test
-├── ml/                             # Phase 4 — training + evaluation
+│   └── daily_pipeline.py           # Phase 3 — Prefect flow: ingest → sentiment → dbt run → test
+├── ml/                             # Phase 4 — model training + evaluation
+│   ├── train_volatility.py         # HAR-RV volatility forecast (beats naive)
+│   ├── train_prophet.py            # Prophet price forecast (illustrative) → forecasts.parquet
+│   ├── train_sentiment.py          # FinBERT scoring → news_scored.parquet
+│   ├── train_anomaly.py            # Isolation Forest → anomalies.parquet
+│   └── evaluate.py                 # benchmarks vs naive → evaluation_metrics.json
 ├── ai/                             # Phase 5 — RAG, MCP server, agent
 ├── serving/                        # Phase 6 — FastAPI + Streamlit
 ├── data/                           # (gitignored) raw + processed data
 │   ├── raw/                        # Parquet files + filings/ text
-│   └── processed/                  # finsight.duckdb (dbt output)
+│   └── processed/                  # finsight.duckdb + ML output parquets
 ├── docker-compose.yml              # Postgres + Qdrant (used Phase 5+)
 ├── tests/                          # pytest unit tests
 ├── .env / .env.example             # API keys (.env is gitignored)
@@ -166,8 +171,8 @@ DuckDB database at `data/processed/finsight.duckdb`.
 
 **`fct_daily_signals`** joins price features with macro context (attached via an
 **ASOF join** so each daily row carries the latest macro value released on or
-before that date) and daily news context. The `news_avg_sentiment` column is a
-placeholder filled in Phase 4 once FinBERT scores the news.
+before that date) and daily news context, including `news_avg_sentiment` (filled
+by the Phase 4 FinBERT model).
 
 **Data-quality tests (21, all passing):** `not_null` on key columns, composite
 `unique` on `(ticker, date)` / `(series_id, date)`, and `accepted_values` on the
@@ -181,6 +186,37 @@ docker compose up -d        # start
 docker compose ps           # status
 docker compose stop         # stop (data is kept)
 ```
+
+---
+
+## Phase 4 — Machine learning
+
+Four models, each tracked in MLflow. Every forecasting model is **benchmarked
+against the naive baseline it must beat** — accuracy is reported honestly.
+
+| Model | Script | What it does | Result |
+|-------|--------|--------------|--------|
+| **HAR-RV volatility** | `ml/train_volatility.py` | forecasts next-week realized volatility | **beats naive on 22/25 assets** — real predictive edge |
+| **Prophet price** | `ml/train_prophet.py` | 7-day price forecast + confidence bands | illustrative only (see below) |
+| **FinBERT sentiment** | `ml/train_sentiment.py` | scores news sentiment (batched, CPU) | fills `news_avg_sentiment` |
+| **Isolation Forest** | `ml/train_anomaly.py` | flags unusual market behaviour | 2% flagged; rediscovers FTX crash, earnings spikes |
+
+**The honest forecasting story.** Price *levels* are close to a random walk, so a
+naive "next week = today" baseline is hard to beat — and in a rolling backtest
+Prophet **does not beat it** (median MAPE 4.6% vs naive 2.9%, 0/25 wins). Prophet
+is kept for the dashboard's price *visualisation* (trend/seasonality + confidence
+bands), not as a predictive edge. Forecasts carry a `high_uncertainty` flag
+(MAPE > 15%) so volatile assets are never shown as trustworthy.
+
+Volatility, by contrast, **clusters and is genuinely predictable**, so the
+**HAR-RV** model (realized vol over 5/22/66-day windows) beats naive vol-persistence
+on **22/25 assets** — the project's forecast with real edge. (Absolute MAPE on
+volatility is high for everyone, ~50%, because realized vol is intrinsically noisy;
+the meaningful result is beating the baseline.)
+
+`ml/evaluate.py` reruns all benchmarks and writes `evaluation_metrics.json`.
+Models train separately from the daily data pipeline (retraining on every refresh
+would be wasteful), and never go in git — only the MLflow registry.
 
 ---
 
@@ -205,6 +241,13 @@ python ingestion/fetch_prices.py
 # Build / test the dbt models
 dbt run  --project-dir dbt --profiles-dir dbt
 dbt test --project-dir dbt --profiles-dir dbt
+
+# Train models (needs MLflow running: mlflow ui --backend-store-uri sqlite:///mlflow.db)
+python ml/train_sentiment.py     # FinBERT (run before dbt if rebuilding sentiment)
+python ml/train_volatility.py    # HAR-RV volatility
+python ml/train_prophet.py       # Prophet price forecast
+python ml/train_anomaly.py       # Isolation Forest
+python ml/evaluate.py            # honest benchmarks vs naive
 ```
 
 ### Inspect the data
@@ -226,8 +269,10 @@ Filings are plain text — open any `data/raw/filings/*.txt` directly.
 
 - **Reddit ingestion** is deferred pending Reddit Data API access; `fetch_reddit.py`
   plugs in without touching other code once available.
-- **News sentiment** (`int_sentiment_daily.avg_sentiment`, `fct_daily_signals.news_avg_sentiment`)
-  is a placeholder until Phase 4's FinBERT model scores each article.
+- **Price forecasting** (Prophet) is illustrative only — it does not beat naive
+  persistence (prices are a random walk). The model with real edge is the HAR-RV
+  **volatility** forecast. A future option is forecasting return *direction* or
+  switching Prophet to a damped/log-return formulation.
 - **SEC filing text** is raw inline-XBRL HTML stripped to text, so it includes XBRL
   tagging noise alongside the narrative. The Phase 5 RAG pipeline will clean and
   chunk it (full content is preserved in the raw files).

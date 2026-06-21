@@ -14,3 +14,10 @@ sources:
         description: "News articles tagged by category (6 global categories)."
       - name: macro
         description: "FRED macro indicators in long form (one row per series+date)."
+
+  - name: processed
+    meta:
+      external_location: "data/processed/{name}.parquet"
+    tables:
+      - name: news_scored
+        description: "News articles with FinBERT sentiment scores (Phase 4 output)."
