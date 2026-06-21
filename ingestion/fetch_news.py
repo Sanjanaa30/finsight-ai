@@ -89,6 +89,7 @@ def main() -> None:
 
     df = pd.DataFrame(all_rows)
     df["published_at"] = pd.to_datetime(df["published_at"], errors="coerce", utc=True)
+    df["ingested_at"] = pd.Timestamp.now(tz="UTC")  # when this run fetched the data
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(OUTPUT_PATH, index=False)

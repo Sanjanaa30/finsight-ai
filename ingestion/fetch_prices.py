@@ -68,6 +68,7 @@ def fetch_prices(tickers: list[str] = TICKERS, start: str = START_DATE) -> pd.Da
 
 def main() -> None:
     df = fetch_prices()
+    df["ingested_at"] = pd.Timestamp.now(tz="UTC")  # when this run fetched the data
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(OUTPUT_PATH, index=False)
 

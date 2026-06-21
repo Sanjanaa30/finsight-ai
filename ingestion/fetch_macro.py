@@ -70,6 +70,7 @@ def main() -> None:
 
     df = pd.DataFrame(all_rows)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["ingested_at"] = pd.Timestamp.now(tz="UTC")  # when this run fetched the data
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(OUTPUT_PATH, index=False)
