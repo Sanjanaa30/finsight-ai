@@ -1,0 +1,16 @@
+version: 2
+
+# Raw Parquet landed by the Phase 2 ingestion scripts. dbt-duckdb reads these
+# files directly via external_location (no load step). {name} expands to the
+# table name below, so each source maps to data/raw/<name>.parquet.
+sources:
+  - name: raw
+    meta:
+      external_location: "data/raw/{name}.parquet"
+    tables:
+      - name: prices
+        description: "Daily OHLCV for all 25 assets (one row per date+ticker)."
+      - name: news
+        description: "News articles tagged by category (6 global categories)."
+      - name: macro
+        description: "FRED macro indicators in long form (one row per series+date)."

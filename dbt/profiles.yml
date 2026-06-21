@@ -1,0 +1,10 @@
+# dbt connection profile. No secrets here -- just a local DuckDB file path.
+# Paths are relative to the repo root. Run dbt from the repo root with:
+#   dbt <cmd> --project-dir dbt --profiles-dir dbt
+finsight:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: data/processed/finsight.duckdb
+      threads: 4

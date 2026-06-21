@@ -1,0 +1,40 @@
+# Local infrastructure for FinSight AI.
+#   postgres -> relational store (asset metadata, alert history) [used Phase 5/6]
+#   qdrant   -> vector DB for SEC filing embeddings             [used Phase 5]
+#
+# These are NOT needed for the dbt/DuckDB work in Phase 3 -- they are started
+# here to verify the setup. Bring them up only when needed:
+#   docker compose up -d      (start)
+#   docker compose ps         (status)
+#   docker compose stop       (stop without deleting data)
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: finsight-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-finsight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finsight}
+      POSTGRES_DB: ${POSTGRES_DB:-finsight}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-finsight}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: finsight-qdrant
+    ports:
+      - "6333:6333"   # REST API + web UI
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  postgres_data:
+  qdrant_data:

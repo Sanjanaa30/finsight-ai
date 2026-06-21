@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: int_price_features
+    description: "Per-ticker price features: moving averages, daily return, volatility."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [ticker, date]
+    columns:
+      - name: ticker
+        data_tests: [not_null]
+      - name: date
+        data_tests: [not_null]
+
+  - name: int_sentiment_daily
+    description: "Daily news aggregates per category (avg_sentiment filled in Phase 4)."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [date, category]
+    columns:
+      - name: date
+        data_tests: [not_null]
+      - name: category
+        data_tests: [not_null]

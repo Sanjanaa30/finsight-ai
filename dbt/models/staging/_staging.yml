@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: stg_prices
+    description: "Cleaned daily OHLCV, one row per ticker per trading day."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [ticker, date]
+    columns:
+      - name: date
+        data_tests: [not_null]
+      - name: ticker
+        data_tests: [not_null]
+      - name: close
+        data_tests: [not_null]
+
+  - name: stg_news
+    description: "Cleaned news articles, tagged by category."
+    columns:
+      - name: title
+        data_tests: [not_null]
+      - name: category
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [geopolitical, commodities, crypto, country, macro, market]
+
+  - name: stg_macro
+    description: "Cleaned macro indicators in long form."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [series_id, date]
+    columns:
+      - name: series_id
+        data_tests: [not_null]
+      - name: date
+        data_tests: [not_null]
+      - name: value
+        data_tests: [not_null]
