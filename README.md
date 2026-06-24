@@ -20,7 +20,7 @@ categories**.
 | **2 — Data ingestion** | Multi-source ingestion → Parquet / text | ✅ 4 of 5 sources (Reddit deferred) |
 | **3 — Data engineering** | dbt models on DuckDB + Prefect orchestration | ✅ Complete |
 | **4 — Machine learning** | Volatility (HAR-RV) + Prophet, FinBERT sentiment, anomaly detection, MLflow | ✅ Complete |
-| 5 — AI engineering | RAG over SEC filings, MCP server, LangGraph agent | ⬜ Planned |
+| **5 — AI engineering** | RAG over SEC filings, MCP server, LangGraph analyst agent (Claude Haiku) | ✅ Complete |
 | 6 — Dashboard + deploy | FastAPI + Streamlit 4-tab dashboard | ⬜ Planned |
 
 ---
@@ -30,7 +30,7 @@ categories**.
 **Data ingestion:** yfinance · NewsAPI · SEC EDGAR · FRED · (Reddit/PRAW planned)
 **Engineering:** dbt (dbt-duckdb) · DuckDB · Parquet (PyArrow) · Prefect · PostgreSQL · Qdrant (Docker)
 **ML:** HAR-RV (volatility) · Prophet · FinBERT · Isolation Forest · scikit-learn · MLflow
-**AI (planned):** LangChain/LangGraph · MCP · sentence-transformers · OpenAI gpt-4o-mini
+**AI:** LangGraph · LangChain · MCP (official SDK) · sentence-transformers · Qdrant · Claude Haiku 4.5
 **Serving (planned):** FastAPI · Streamlit
 **Tooling:** Python 3.13 · uv · loguru · pytest
 
@@ -47,7 +47,15 @@ External APIs ──► ingestion/*.py ──► data/raw/*.parquet ─┐
                                        stg_*          int_*            fct_daily_signals
                                                                          │
                             all orchestrated by Prefect (daily flow)     ▼
-                            ingest → dbt run → dbt test            (Phase 4 ML input)
+                            ingest → dbt run → dbt test              fct_daily_signals
+                                                                         │
+   ┌─────────────────────── Phase 4 ML ───────────────────────┐         ▼
+   HAR-RV volatility · Prophet price · FinBERT sentiment · Isolation Forest anomaly
+   (tracked in MLflow; volatility/anomaly outputs → parquet)            │
+                                                                         ▼
+   ┌─────────────────────── Phase 5 AI ───────────────────────┐
+   SEC filings → RAG (Qdrant)        4 MCP tools         LangGraph agent (Claude Haiku)
+   get_stock_price · get_sentiment_score · run_forecast · search_filings → grounded report
 ```
 
 ---
@@ -79,6 +87,10 @@ finsight-ai/
 │   ├── train_anomaly.py            # Isolation Forest → anomalies.parquet
 │   └── evaluate.py                 # benchmarks vs naive → evaluation_metrics.json
 ├── ai/                             # Phase 5 — RAG, MCP server, agent
+│   ├── rag_pipeline.py             # clean + chunk + embed SEC filings → Qdrant
+│   ├── mcp_server.py               # MCP server: 4 tools over the data layers
+│   ├── prompts.py                  # analyst system prompt + honesty rules
+│   └── agent.py                    # LangGraph analyst agent (Claude Haiku)
 ├── serving/                        # Phase 6 — FastAPI + Streamlit
 ├── data/                           # (gitignored) raw + processed data
 │   ├── raw/                        # Parquet files + filings/ text
@@ -121,9 +133,10 @@ dbt deps --project-dir dbt --profiles-dir dbt
 | `FRED_KEY` | fred.stlouisfed.org | macro ingestion | unlimited |
 | `SEC_USER_AGENT` | (your name + email) | SEC EDGAR etiquette | n/a — header only |
 | `REDDIT_CLIENT_ID` / `REDDIT_SECRET` / `REDDIT_USER_AGENT` | reddit.com/prefs/apps | (deferred) Reddit | 100 req/min |
-| `OPENAI_API_KEY` | platform.openai.com | (Phase 5) analyst agent | ~$5 total dev |
+| `ANTHROPIC_API_KEY` | console.anthropic.com | Phase 5 analyst agent (Claude Haiku) | ~$1/1M in, $5/1M out |
 
-`yfinance`, `SEC EDGAR`, and `GDELT` need no key. `.env` is gitignored — keys are never committed.
+`yfinance`, `SEC EDGAR`, and `GDELT` need no key. `OPENAI_API_KEY` is unused (the
+guide's default; this build uses Claude instead). `.env` is gitignored — keys are never committed.
 
 ---
 
@@ -220,6 +233,39 @@ would be wasteful), and never go in git — only the MLflow registry.
 
 ---
 
+## Phase 5 — AI engineering
+
+A conversational analyst that grounds its answers in primary-source SEC filings
+and the platform's own models.
+
+**1. RAG over SEC filings** (`ai/rag_pipeline.py`) — cleans the inline-XBRL noise
+out of the 10-Ks, token-chunks the narrative (240 tokens to fit the embedder),
+embeds with `all-MiniLM-L6-v2` (384-dim, CPU), and upserts ~5K chunks into Qdrant.
+
+**2. MCP server** (`ai/mcp_server.py`) — an official-SDK MCP server exposing 4 tools,
+each reading a different data layer. Works with the agent below *and* any MCP client
+(e.g. Claude Desktop):
+
+| Tool | Source |
+|------|--------|
+| `get_stock_price` | `fct_daily_signals` (DuckDB) |
+| `get_sentiment_score` | `int_sentiment_daily` (market/category-level) |
+| `run_forecast` | price + volatility forecast parquets |
+| `search_filings` | Qdrant RAG index |
+
+**3. LangGraph agent** (`ai/agent.py` + `ai/prompts.py`) — a `StateGraph`
+(`fetch_price → fetch_sentiment → fetch_forecast → search_filings → generate_report`)
+whose final node calls **Claude Haiku** to synthesize a structured report.
+
+**The honesty constraints carry through to the report.** The system prompt forces
+the agent to present the price forecast as *illustrative only* (it doesn't beat
+naive), lead with the *volatility* forecast (the model with real edge), flag
+high-uncertainty assets, treat sentiment as market-level, and ground every filing
+claim in retrieved text — verified on both a US stock (NVDA) and a no-filing crypto
+asset (SOL-USD). Requires `ANTHROPIC_API_KEY` and a running Qdrant.
+
+---
+
 ## Running the pipeline
 
 **Everything at once (recommended)** — the Prefect flow runs all ingestion in
@@ -248,6 +294,10 @@ python ml/train_volatility.py    # HAR-RV volatility
 python ml/train_prophet.py       # Prophet price forecast
 python ml/train_anomaly.py       # Isolation Forest
 python ml/evaluate.py            # honest benchmarks vs naive
+
+# AI layer (needs Qdrant running: docker compose up -d qdrant, and ANTHROPIC_API_KEY)
+python ai/rag_pipeline.py        # embed SEC filings into Qdrant (run once)
+python ai/agent.py NVDA          # run the analyst agent on a ticker
 ```
 
 ### Inspect the data
@@ -273,8 +323,10 @@ Filings are plain text — open any `data/raw/filings/*.txt` directly.
   persistence (prices are a random walk). The model with real edge is the HAR-RV
   **volatility** forecast. A future option is forecasting return *direction* or
   switching Prophet to a damped/log-return formulation.
-- **SEC filing text** is raw inline-XBRL HTML stripped to text, so it includes XBRL
-  tagging noise alongside the narrative. The Phase 5 RAG pipeline will clean and
-  chunk it (full content is preserved in the raw files).
 - **News history** is limited to ~30 days by NewsAPI's free tier; the Prefect flow
   refreshes it on each run.
+- **The agent imports the MCP tools directly** (they are the same functions the MCP
+  server registers) rather than connecting over stdio — simpler and fully testable;
+  the standalone `mcp_server.py` still runs as a real MCP server for external clients.
+- **Phase 6 (dashboard + deploy)** is next: a Streamlit 4-tab UI (Overview / Forecast
+  / News / Analyst) plus a FastAPI backend.
