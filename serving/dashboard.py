@@ -28,7 +28,7 @@ MONO = "IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
 SANS = "Inter, system-ui, -apple-system, Segoe UI, sans-serif"
 
 st.set_page_config(page_title="FinSight AI", page_icon="📈", layout="wide",
-                   initial_sidebar_state="expanded")
+                   initial_sidebar_state="auto")
 
 pio.templates["finsight"] = go.layout.Template(layout=dict(
     font=dict(family=SANS, color=INK, size=13),
@@ -62,12 +62,28 @@ def inject_css() -> None:
       html, body, [class*="st-"], .stMarkdown, p, span, div, label, input, button {
         font-family:'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
       .block-container { padding:1.5rem 2.6rem 2.4rem; max-width:1560px; }
-      /* Sidebar: force it open + non-collapsible so it never hides behind the
-         (removed) header toggle. */
-      section[data-testid="stSidebar"] { width:236px !important; min-width:236px !important;
-        transform:none !important; visibility:visible !important;
-        background:var(--surface); border-right:1px solid var(--line); }
-      [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"] { display:none !important; }
+      section[data-testid="stSidebar"] { background:var(--surface);
+        border-right:1px solid var(--line); }
+      /* Desktop / large tablets: pin the sidebar open at a fixed width and hide the
+         collapse toggle so the asset list is always in view. */
+      @media (min-width: 993px) {
+        section[data-testid="stSidebar"] { width:236px !important; min-width:236px !important;
+          transform:none !important; visibility:visible !important; }
+        [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"] {
+          display:none !important; }
+      }
+      /* Phones / small tablets: let Streamlit collapse the sidebar into a slide-in
+         drawer, keep its expand/collapse toggle reachable, and reclaim body padding. */
+      @media (max-width: 992px) {
+        section[data-testid="stSidebar"] { min-width:0 !important; }
+        [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"] {
+          display:flex !important; visibility:visible !important; }
+        /* Re-show a minimal, transparent header so the drawer toggle is reachable. */
+        [data-testid="stHeader"] { display:flex !important; height:auto !important;
+          background:transparent !important; }
+        [data-testid="stAppViewContainer"] > .main { padding-top:0 !important; }
+        .block-container { padding:1rem 1rem 2rem !important; }
+      }
       #MainMenu, footer, [data-testid="stToolbar"] { visibility:hidden; }
       [data-testid="stHeader"] { display:none; height:0; }
       [data-testid="stAppViewContainer"] > .main { padding-top:0; }
