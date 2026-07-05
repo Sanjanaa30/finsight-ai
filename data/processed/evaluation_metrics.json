@@ -1,0 +1,33 @@
+{
+  "price_forecast": {
+    "prophet_median_mape": 5.06,
+    "naive_median_mape": 2.68,
+    "prophet_beats_naive": 0,
+    "n_total": 25,
+    "wilcoxon_p": 1.0,
+    "binomial_p": 1.0
+  },
+  "volatility_forecast": {
+    "har_median_mape": 51.45,
+    "naive_median_mape": 57.6,
+    "har_beats_naive": 22,
+    "n_total": 25,
+    "wilcoxon_p": 0.00016,
+    "binomial_p": 8e-05
+  },
+  "sentiment": {
+    "total_articles": 583,
+    "articles_per_day": 58.3,
+    "categories": 6,
+    "label_distribution": {
+      "neutral": 0.398,
+      "negative": 0.355,
+      "positive": 0.247
+    }
+  },
+  "anomaly": {
+    "total_days": 29457,
+    "anomalies": 590,
+    "anomaly_rate": 0.02
+  }
+}
