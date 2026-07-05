@@ -1,0 +1,18 @@
+# Keep the demo image small — ship code + data/processed only.
+.venv/
+.git/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.local.md
+.env
+mlruns/
+mlartifacts/
+mlflow.db
+artifacts/
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+data/raw/
+tests/
+planned_guide.pdf
