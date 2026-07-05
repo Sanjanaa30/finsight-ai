@@ -29,6 +29,7 @@ logging.getLogger("prophet").setLevel(logging.ERROR)
 warnings.filterwarnings("ignore")
 
 LIVE_TTL = int(os.getenv("FINSIGHT_LIVE_TTL", str(3 * 3600)))  # match the /live cadence
+DEMO = os.getenv("FINSIGHT_DEMO", "").lower() in ("1", "true", "yes")  # serve stored data only
 
 FORECAST_DAYS = 7
 HOLDOUT_DAYS = 7
@@ -54,6 +55,8 @@ def _cached(kind: str, ticker: str, builder):
 
 def _history(ticker: str, period: str = "3y") -> pd.DataFrame:
     """Fresh daily OHLCV + the same features the mart computes. Raises on empty."""
+    if DEMO:  # demo mode -> skip the live fetch so callers fall back to stored data
+        raise RuntimeError("demo mode: using stored data")
     import yfinance as yf
 
     raw = yf.Ticker(ticker).history(period=period, interval="1d", auto_adjust=True)

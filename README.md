@@ -67,13 +67,13 @@ latest pipeline run rather than a stale snapshot.
 
 ## Tech stack
 
-**Data ingestion:** yfinance · NewsAPI · SEC EDGAR · FRED
-**Engineering:** dbt (dbt-duckdb) · DuckDB · Parquet (PyArrow) · pandas · Prefect · PostgreSQL
-**ML:** HAR-RV (volatility) · Prophet · FinBERT · Isolation Forest · scikit-learn · MLflow
-**AI:** LangGraph · LangChain · MCP (official SDK) · sentence-transformers · Qdrant (vector store) · Anthropic Claude Haiku 4.5
-**Serving:** FastAPI · Uvicorn · Streamlit · Plotly · xhtml2pdf (PDF export)
-**Infra:** Docker · docker-compose (PostgreSQL + Qdrant)
-**Tooling:** Python 3.13 · uv · loguru · pytest
+- **Data ingestion:** yfinance · NewsAPI · SEC EDGAR · FRED
+- **ML:** HAR-RV (volatility) · Prophet · FinBERT · Isolation Forest · scikit-learn · MLflow
+- **Engineering:** dbt (dbt-duckdb) · DuckDB · Parquet (PyArrow) · pandas · Prefect · PostgreSQL
+- **AI:** LangGraph · LangChain · MCP (official SDK) · sentence-transformers · Qdrant (vector store) · Anthropic Claude Haiku 4.5
+- **Serving:** FastAPI · Uvicorn · Streamlit · Plotly · xhtml2pdf (PDF export)
+- **Infra:** Docker · docker-compose (PostgreSQL + Qdrant)
+- **Tooling:** Python 3.13 · uv · loguru · pytest
 
 ---
 
@@ -209,6 +209,33 @@ Then open **http://localhost:8501**.
 - Data caches are **in-memory**, so a fresh start always fetches **live** (never stale).
 - The **Analyst tab and filings search** also need Docker/Qdrant up (`docker compose up -d qdrant`).
 - The refresh interval is configurable: set `FINSIGHT_LIVE_TTL` (seconds) before starting the API.
+
+### 🎬 Demo mode (safe for a public live demo)
+
+For a public demo or screen-recording, run with **`FINSIGHT_DEMO=1`**. In this mode the app
+serves **only real historical data** — **no external API calls at all** (no yfinance, no NewsAPI,
+no Claude), so there is **no cost, no rate limits, and nothing to abuse**:
+
+```powershell
+# (optional, once) pre-build the AI reports so the demo shows a real report with no Claude call:
+python serving/pregenerate_reports.py            # needs ANTHROPIC_API_KEY + internet, run ONCE
+
+# then run the demo (no keys needed at demo time)
+$env:FINSIGHT_DEMO = "1"
+.venv\Scripts\python.exe -m uvicorn serving.api:app --port 8000     # terminal 1
+.venv\Scripts\streamlit.exe run serving/dashboard.py --server.port 8501   # terminal 2
+```
+
+In demo mode:
+- Every tab runs on **stored historical data** (the offline pipeline output).
+- A **"🎬 Demo mode"** banner and a **"demo · historical data"** badge appear in the header.
+- The **AI report** serves a **pre-generated** file (from `pregenerate_reports.py`); the free-form
+  **chat** shows a "run locally to chat" note.
+- The **background scheduler is off**, so the app never phones home.
+
+To run the full **live** app again, just start the API **without** `FINSIGHT_DEMO`.
+*(Note: `data/` is gitignored, so a cloud demo must ship the `data/processed/` files —
+the DuckDB DB, ML parquets, and `demo_reports/` — alongside the code.)*
 
 ---
 
@@ -403,4 +430,22 @@ over WebSockets instead of the delayed daily feed.
 **Product.** Portfolios, watchlists, and alerts on anomalies or sentiment shifts; user
 accounts with saved conversations; and a backtesting or paper-trading module to test ideas
 without real money.
+
+---
+
+## Disclaimer & data attribution
+
+**FinSight AI is a personal, educational project — not financial advice.** Nothing here is a
+recommendation to buy, sell, or hold any asset; figures may be delayed or historical and must
+not be used for real trading decisions.
+
+**Data sources** (all used under their respective terms; not affiliated with or endorsed by any
+provider):
+- **Prices** — Yahoo Finance, via the `yfinance` library.
+- **News** — NewsAPI (`newsapi.org`).
+- **Filings** — U.S. SEC EDGAR (public domain).
+- **Macro** — FRED, Federal Reserve Bank of St. Louis.
+
+All trademarks belong to their respective owners. The free tiers of these APIs are intended for
+development; a production/commercial deployment should switch to officially licensed data feeds.
 

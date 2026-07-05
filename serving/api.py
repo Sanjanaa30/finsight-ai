@@ -45,8 +45,42 @@ TICKERS = [
 # ---- Live quotes + background refresher (runs even with zero viewers) ---------
 TAPE = ["NVDA", "AAPL", "BTC-USD", "GC=F", "^NSEI", "TSLA", "^GSPC"]
 LIVE_TTL = int(os.getenv("FINSIGHT_LIVE_TTL", str(3 * 3600)))  # refresh every 3h (override via env)
+# Demo mode: serve real HISTORICAL data only -- no yfinance/NewsAPI/Claude calls, no scheduler.
+# Safe for a public live demo (no external cost or rate limits). Enable with FINSIGHT_DEMO=1.
+DEMO = os.getenv("FINSIGHT_DEMO", "").lower() in ("1", "true", "yes")
+DEMO_REPORTS = PROJECT_ROOT / "data" / "processed" / "demo_reports"
 _live_cache: dict = {"t": 0.0, "data": None}
 _quote_cache: dict = {}  # per-ticker live-quote cache for the Overview price card
+
+
+def _stored_quote(ticker: str) -> dict:
+    """A quote built from the latest STORED close (used in demo mode / when yfinance is down)."""
+    con = _con()
+    df = con.execute("""SELECT close, daily_return, date FROM fct_daily_signals
+                        WHERE ticker = ? ORDER BY date DESC LIMIT 1""", [ticker]).fetchdf()
+    con.close()
+    if df.empty:
+        raise HTTPException(404, f"No stored data for {ticker}")
+    r = df.iloc[0]
+    return {"ticker": ticker, "price": float(r["close"]),
+            "change_pct": float(r["daily_return"] or 0) * 100,
+            "fetched_at": f"historical ({str(r['date'])[:10]})"}
+
+
+def _stored_live() -> dict:
+    """The ticker-tape built from stored closes (demo mode)."""
+    con = _con()
+    quotes = []
+    for s in TAPE:
+        df = con.execute("""SELECT close, daily_return FROM fct_daily_signals
+                            WHERE ticker = ? ORDER BY date DESC LIMIT 1""", [s]).fetchdf()
+        if not df.empty:
+            r = df.iloc[0]
+            quotes.append({"ticker": s, "price": float(r["close"]),
+                           "change_pct": float(r["daily_return"] or 0) * 100})
+    con.close()
+    return {"quotes": quotes, "source": "historical snapshot (demo mode)",
+            "fetched_at": "historical", "previous_fetched_at": None}
 
 
 def _fetch_live_quotes() -> dict:
@@ -104,11 +138,12 @@ async def _live_scheduler() -> None:
 
 @asynccontextmanager
 async def lifespan(_app):
-    task = asyncio.create_task(_live_scheduler())  # start the background refresher
+    task = None if DEMO else asyncio.create_task(_live_scheduler())  # no refresher in demo
     try:
         yield
     finally:
-        task.cancel()
+        if task is not None:
+            task.cancel()
 
 
 app = FastAPI(title="FinSight AI API", version="1.0", lifespan=lifespan)
@@ -145,7 +180,7 @@ class TextRequest(BaseModel):
 @app.get("/")
 def root():
     return {"service": "FinSight AI API", "tickers": len(TICKERS),
-            "docs": "/docs"}
+            "docs": "/docs", "demo": DEMO}
 
 
 @app.get("/tickers")
@@ -288,6 +323,8 @@ def heatmap():
 @app.get("/live")
 def live():
     """Ticker-tape quotes, served from the cache the background scheduler keeps fresh (3h)."""
+    if DEMO:
+        return _stored_live()
     if _live_cache["data"] is None:
         _refresh_live_cache()  # cold start, before the scheduler's first tick lands
     return _live_cache["data"]
@@ -297,6 +334,8 @@ def live():
 def quote(ticker: str):
     """One live quote for any ticker (Overview price card). Cached per-ticker for LIVE_TTL (3h)."""
     ticker = ticker.upper()
+    if DEMO:
+        return _stored_quote(ticker)
     c = _quote_cache.get(ticker)
     if c and time.time() - c["t"] < LIVE_TTL:
         return c["data"]
@@ -309,7 +348,7 @@ def quote(ticker: str):
     except Exception:  # noqa: BLE001
         if c:
             return c["data"]  # serve the last good quote rather than fail
-        raise HTTPException(503, f"No live quote for {ticker}")
+        return _stored_quote(ticker)  # last resort: the stored close
     _quote_cache[ticker] = {"t": time.time(), "data": data}
     return data
 
@@ -348,14 +387,33 @@ def filings_search(query: str, ticker: str | None = None,
 
 @app.post("/agent")
 def agent(req: AgentRequest):
-    """Run the LangGraph analyst agent and return the report (Claude Haiku)."""
+    """Run the LangGraph analyst agent and return the report (Claude Haiku).
+
+    In demo mode, serve a PRE-GENERATED report (no Claude call).
+    """
+    tk = req.ticker.upper()
+    if DEMO:
+        path = DEMO_REPORTS / f"{tk}.md"
+        if path.exists():
+            return {"ticker": tk, "report": path.read_text(encoding="utf-8")}
+        return {"ticker": tk, "report": (
+            f"### Demo mode\n\nA pre-generated report isn't available for **{tk}** in this demo. "
+            "Pre-built reports exist for the featured tickers (e.g. NVDA, AAPL, BTC-USD). To generate "
+            "a live report for any asset, run FinSight locally with an `ANTHROPIC_API_KEY`.")}
     result = analyst.invoke({"ticker": req.ticker})
-    return {"ticker": req.ticker.upper(), "report": result["report"]}
+    return {"ticker": tk, "report": result["report"]}
 
 
 @app.post("/ask")
 def ask(req: AskRequest):
     """Conversational analyst -- answers any finance/dashboard question using live-data tools."""
+    if DEMO:
+        return {"answer": (
+            "💡 **Demo mode.** The live chat assistant needs a Claude API connection, which is turned "
+            "off in this public demo (to avoid API cost/abuse). Everything else runs on real historical "
+            "data — explore the **Overview / Forecast / News** tabs and the pre-built **AI report** on "
+            "the Overview tab. To chat freely about any ticker, run FinSight locally with your own "
+            "`ANTHROPIC_API_KEY`.")}
     try:
         return {"answer": assistant_ask(req.question, req.history)}
     except Exception as exc:  # noqa: BLE001

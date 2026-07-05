@@ -224,6 +224,9 @@ artifacts/
 mlruns/
 .venv/
 
+# Personal notes — local only, never committed
+*.local.md
+
 planned_guide.pdf
 # dbt
 dbt/target/

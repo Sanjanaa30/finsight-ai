@@ -1093,17 +1093,25 @@ _MARK = ("<svg width='16' height='16' viewBox='0 0 16 16' fill='none'>"
          "<rect x='6.5' y='5' width='3' height='10' rx='1' fill='white'/>"
          "<rect x='12' y='2' width='3' height='13' rx='1' fill='white'/></svg>")
 
+_DEMO = bool(api_get("/").get("demo"))
+_badge = "demo · historical data" if _DEMO else "live · real-time market data"
 st.markdown(
     f"<div class='fs-head'><div class='fs-brand'>"
     f"<span class='mark'>{_MARK}</span>"
     f"<span class='nm'>FinSight AI</span>"
     f"<span class='tag'>global financial intelligence</span></div>"
-    f"<span class='live'><span class='dot'></span>live · real-time market data</span></div>",
+    f"<span class='live'><span class='dot'></span>{_badge}</span></div>",
     unsafe_allow_html=True)
+
+if _DEMO:
+    st.info("🎬 **Demo mode** — everything below runs on **real historical data** (no live fetching, "
+            "no API keys needed). The **AI report** on the Overview tab is pre-built; the free-form "
+            "**chat** is off in the demo. Run locally with API keys for full live mode.")
 
 tickers = api_get("/tickers")
 ticker = st.sidebar.selectbox("Asset", tickers, index=0)
-st.sidebar.caption("Prices, forecasts & news are live — auto-refreshed every 3h.")
+st.sidebar.caption("Historical snapshot (demo mode)." if _DEMO
+                   else "Prices, forecasts & news are live — auto-refreshed every 3h.")
 
 tab_overview, tab_forecast, tab_news, tab_analyst = st.tabs(
     ["Overview", "Forecast", "News", "Analyst"])
@@ -1115,3 +1123,11 @@ with tab_news:
     render_news()
 with tab_analyst:
     render_analyst(ticker)
+
+st.divider()
+st.caption(
+    "**Educational demo — not financial advice.** FinSight AI is a personal learning project; "
+    "figures may be delayed or historical and must not be used for real trading decisions. "
+    "**Data sources:** prices via Yahoo Finance (yfinance) · news via NewsAPI · filings via SEC EDGAR · "
+    "macro via FRED (Federal Reserve Bank of St. Louis). Not affiliated with, or endorsed by, any data "
+    "provider; all trademarks belong to their owners.")

@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 LIVE_TTL = int(os.getenv("FINSIGHT_LIVE_TTL", str(3 * 3600)))
+DEMO = os.getenv("FINSIGHT_DEMO", "").lower() in ("1", "true", "yes")  # serve stored data only
 NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
 ENDPOINT = "https://newsapi.org/v2/everything"
 SEARCH_IN = "title,description"
@@ -96,6 +97,8 @@ def _fetch_category(category: str, query: str) -> list[dict]:
 
 def _articles() -> pd.DataFrame:
     """Cached scored-article frame for all 6 categories. Raises if news/FinBERT down."""
+    if DEMO:  # demo mode -> skip NewsAPI/FinBERT so callers fall back to stored data
+        raise RuntimeError("demo mode: using stored data")
     if _cache["df"] is not None and time.time() - _cache["t"] < LIVE_TTL:
         return _cache["df"]
     if not NEWSAPI_KEY:
