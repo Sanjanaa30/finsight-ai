@@ -1,5 +1,6 @@
-# Keep shell scripts LF so they run correctly in the Linux (Docker) build.
-*.sh text eol=lf
-Dockerfile text eol=lf
+# Shell scripts must stay LF for the Linux (Docker) build. -text = store exact
+# bytes, never convert line endings (works reliably across Windows/Linux).
+*.sh -text
+Dockerfile -text
 *.parquet filter=lfs diff=lfs merge=lfs -text
 *.duckdb filter=lfs diff=lfs merge=lfs -text
