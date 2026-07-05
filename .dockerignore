@@ -13,6 +13,6 @@ artifacts/
 dbt/target/
 dbt/logs/
 dbt/dbt_packages/
-data/raw/
+data/raw/filings/
 tests/
 planned_guide.pdf
