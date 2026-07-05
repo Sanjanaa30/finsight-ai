@@ -1,2 +1,5 @@
+# Keep shell scripts LF so they run correctly in the Linux (Docker) build.
+*.sh text eol=lf
+Dockerfile text eol=lf
 *.parquet filter=lfs diff=lfs merge=lfs -text
 *.duckdb filter=lfs diff=lfs merge=lfs -text
