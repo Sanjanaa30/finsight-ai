@@ -210,32 +210,11 @@ Then open **http://localhost:8501**.
 - The **Analyst tab and filings search** also need Docker/Qdrant up (`docker compose up -d qdrant`).
 - The refresh interval is configurable: set `FINSIGHT_LIVE_TTL` (seconds) before starting the API.
 
-### 🎬 Demo mode (safe for a public live demo)
+### Demo mode
 
-For a public demo or screen-recording, run with **`FINSIGHT_DEMO=1`**. In this mode the app
-serves **only real historical data** — **no external API calls at all** (no yfinance, no NewsAPI,
-no Claude), so there is **no cost, no rate limits, and nothing to abuse**:
-
-```powershell
-# (optional, once) pre-build the AI reports so the demo shows a real report with no Claude call:
-python serving/pregenerate_reports.py            # needs ANTHROPIC_API_KEY + internet, run ONCE
-
-# then run the demo (no keys needed at demo time)
-$env:FINSIGHT_DEMO = "1"
-.venv\Scripts\python.exe -m uvicorn serving.api:app --port 8000     # terminal 1
-.venv\Scripts\streamlit.exe run serving/dashboard.py --server.port 8501   # terminal 2
-```
-
-In demo mode:
-- Every tab runs on **stored historical data** (the offline pipeline output).
-- A **"🎬 Demo mode"** banner and a **"demo · historical data"** badge appear in the header.
-- The **AI report** serves a **pre-generated** file (from `pregenerate_reports.py`); the free-form
-  **chat** shows a "run locally to chat" note.
-- The **background scheduler is off**, so the app never phones home.
-
-To run the full **live** app again, just start the API **without** `FINSIGHT_DEMO`.
-*(Note: `data/` is gitignored, so a cloud demo must ship the `data/processed/` files —
-the DuckDB DB, ML parquets, and `demo_reports/` — alongside the code.)*
+Start the API with **`FINSIGHT_DEMO=1`** to run on stored historical data only — no external API
+calls (yfinance / NewsAPI / Claude), so it's safe for a public demo. The AI report is served from
+pre-generated files (`serving/pregenerate_reports.py`) and the free-form chat is disabled.
 
 ---
 
