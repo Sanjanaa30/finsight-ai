@@ -1,62 +1,112 @@
 # FinSight AI
 
-AI-powered global financial intelligence platform — stock forecasting, global
-news sentiment, RAG over SEC filings, an MCP server, and an autonomous analyst
-agent. Built fresh, phase by phase.
+## Overview
 
-You type a stock, crypto symbol, commodity, or country index, and the platform
-tells you the current price, a short-term forecast, how the news feels today,
-any unusual market behaviour, and a full AI-written analysis on demand —
-covering **25 global assets** across 5 categories and **6 global news
-categories**.
+FinSight AI is an end-to-end financial-intelligence platform that combines market
+data, machine-learning models, and LLM reasoning in a single web app. It tracks 25
+assets across five classes — US equities, cryptocurrencies, commodities, international
+indices, and benchmark indices — turning raw market and news data into something clear
+and readable.
+
+For any asset, the platform shows its current price, a short-term price forecast, a
+volatility outlook, any trading days flagged as unusual, and the sentiment of the day's
+financial news. On demand it writes a full analysis grounded in the asset's own market
+data and SEC filings, and a built-in assistant answers open-ended finance questions by
+querying the platform's data through tools.
+
+I built it in six phases — environment setup, data ingestion, data engineering, machine
+learning, AI engineering, and serving — which together form a complete pipeline from
+public data sources to a deployed app. Figures are computed on live data, with an
+offline pipeline kept as a fallback.
+
+Every forecasting model is benchmarked against a simple baseline, and the interface is upfront about how far to trust each output.
+Short-term price direction has no genuine edge, so it's labelled illustrative;
+volatility measurably beats its baseline, so that's the signal the platform actually
+stands behind. The honesty framework below explains the approach.
 
 ---
 
-## Status
+## Status — all 6 phases complete ✅
 
-| Phase | Scope | State |
-|-------|-------|-------|
-| **1 — Setup** | Repo, structure, env, deps, Docker | ✅ Complete |
-| **2 — Data ingestion** | Multi-source ingestion → Parquet / text | ✅ 4 of 5 sources (Reddit deferred) |
-| **3 — Data engineering** | dbt models on DuckDB + Prefect orchestration | ✅ Complete |
-| **4 — Machine learning** | Volatility (HAR-RV) + Prophet, FinBERT sentiment, anomaly detection, MLflow | ✅ Complete |
-| **5 — AI engineering** | RAG over SEC filings, MCP server, LangGraph analyst agent (Claude Haiku) | ✅ Complete |
-| 6 — Dashboard + deploy | FastAPI + Streamlit 4-tab dashboard | ⬜ Planned |
+Every phase below is built and working end to end.
+
+| Phase | In plain words | State |
+|-------|----------------|-------|
+| **1 — Setup** | Repo, folders, environment, dependencies, Docker | ✅ |
+| **2 — Data ingestion** | Pull raw data from four public sources into files | ✅ |
+| **3 — Data engineering** | Clean & shape the data with dbt on DuckDB; orchestrate with Prefect | ✅ |
+| **4 — Machine learning** | Volatility, price, sentiment & anomaly models — each measured against a simple baseline | ✅ |
+| **5 — AI engineering** | Search SEC filings (RAG), an MCP server, and a LangGraph analyst agent | ✅ |
+| **6 — Serving (live)** | FastAPI backend + Streamlit dashboard + conversational assistant, all on **live** data | ✅ |
+
+Figures are computed on live data, with the offline pipeline kept as a fallback.
+
+---
+
+## What you can do (the dashboard)
+
+A four-tab web app. Everything you see is computed on live data, refreshed from the
+latest pipeline run rather than a stale snapshot.
+
+- **Overview** — a ticker tape, then the selected asset's price, 7-day forecast, recent
+  anomaly count, and volatility. A price-and-forecast chart shows where the asset sits
+  in its 90-day range, and a market-mood panel pulls together a sentiment gauge,
+  per-topic cards, trend arrows, and the headlines driving them. One click generates an
+  AI report [you can download as a PDF].
+- **Forecast** — the volatility outlook, which is the forecast worth trusting, alongside the
+  7-day price forecast, which is labelled illustrative for a reason. An error gauge and a
+  "behind the scenes" panel show how each forecast was made and how it scored against a
+  naive baseline.
+- **News** — sentiment by category and over time, a live FinBERT analyzer (paste any
+  headline, get a score), and a filterable news feed.
+- **Analyst** — a chat assistant. Ask a general finance question ("what is a P/E ratio?") or
+  something about the data ("which asset is most volatile?", "compare AAPL and MSFT") and
+  it pulls live data through tools to answer. It declines non-finance questions.
 
 ---
 
 ## Tech stack
 
-**Data ingestion:** yfinance · NewsAPI · SEC EDGAR · FRED · (Reddit/PRAW planned)
-**Engineering:** dbt (dbt-duckdb) · DuckDB · Parquet (PyArrow) · Prefect · PostgreSQL · Qdrant (Docker)
+**Data ingestion:** yfinance · NewsAPI · SEC EDGAR · FRED
+**Engineering:** dbt (dbt-duckdb) · DuckDB · Parquet (PyArrow) · pandas · Prefect · PostgreSQL
 **ML:** HAR-RV (volatility) · Prophet · FinBERT · Isolation Forest · scikit-learn · MLflow
-**AI:** LangGraph · LangChain · MCP (official SDK) · sentence-transformers · Qdrant · Claude Haiku 4.5
-**Serving (planned):** FastAPI · Streamlit
+**AI:** LangGraph · LangChain · MCP (official SDK) · sentence-transformers · Qdrant (vector store) · Anthropic Claude Haiku 4.5
+**Serving:** FastAPI · Uvicorn · Streamlit · Plotly · xhtml2pdf (PDF export)
+**Infra:** Docker · docker-compose (PostgreSQL + Qdrant)
 **Tooling:** Python 3.13 · uv · loguru · pytest
 
 ---
 
-## Architecture (so far)
+## How the live system fits together
 
 ```
-External APIs ──► ingestion/*.py ──► data/raw/*.parquet ─┐
- (yfinance,          (Phase 2)         (+ filings/*.txt)  │
-  NewsAPI,                                                 │  dbt (DuckDB)
-  SEC, FRED)                                               ▼  (Phase 3)
-                                       staging  ─►  intermediate  ─►  marts
-                                       stg_*          int_*            fct_daily_signals
-                                                                         │
-                            all orchestrated by Prefect (daily flow)     ▼
-                            ingest → dbt run → dbt test              fct_daily_signals
-                                                                         │
-   ┌─────────────────────── Phase 4 ML ───────────────────────┐         ▼
-   HAR-RV volatility · Prophet price · FinBERT sentiment · Isolation Forest anomaly
-   (tracked in MLflow; volatility/anomaly outputs → parquet)            │
-                                                                         ▼
-   ┌─────────────────────── Phase 5 AI ───────────────────────┐
-   SEC filings → RAG (Qdrant)        4 MCP tools         LangGraph agent (Claude Haiku)
-   get_stock_price · get_sentiment_score · run_forecast · search_filings → grounded report
+                       ┌──────────────────────  BROWSER  ──────────────────────┐
+                       │              Streamlit dashboard (port 8501)           │
+                       │        Overview · Forecast · News · Analyst            │
+                       └───────────────────────────┬────────────────────────────┘
+                                                    │  HTTP (JSON)
+                                                    ▼
+                       ┌──────────────────────  FastAPI (port 8000)  ───────────┐
+                       │  /prices /forecast /anomalies /quote /live  (prices)   │
+                       │  /sentiment /sentiment/trend /news /sentiment/drivers   │
+                       │  /agent (report)   /ask (chat assistant)                │
+                       │                                                         │
+                       │  Background scheduler: every 3h it refreshes all of     │
+                       │  the above on its own (works even with no one watching) │
+                       └───────┬─────────────────────────────┬───────────────────┘
+                               │ live compute (cached 3h)     │ falls back to ↓
+             ┌─────────────────▼──────────────┐   ┌───────────▼───────────────────┐
+             │ live_compute.py                │   │  Stored pipeline outputs       │
+             │  yfinance history → re-run      │   │  (Phases 2–5): DuckDB marts,   │
+             │  Prophet + HAR-RV + IsoForest   │   │  ML parquets, Qdrant filings   │
+             │ live_news.py                    │   │  — used if a live fetch fails  │
+             │  NewsAPI → FinBERT scoring       │   └────────────────────────────────┘
+             └─────────────────────────────────┘
 ```
+
+The offline pipeline (Phases 2–5) still exists and is the **safety net**: if a live
+fetch ever fails (no internet, no API key), each endpoint quietly serves the last
+stored result instead of blanking.
 
 ---
 
@@ -64,38 +114,37 @@ External APIs ──► ingestion/*.py ──► data/raw/*.parquet ─┐
 
 ```
 finsight-ai/
-├── ingestion/                      # Phase 2 — source → raw landing
+├── ingestion/                      # Phase 2 — source → raw files
 │   ├── fetch_prices.py             # 25 assets via yfinance → prices.parquet
 │   ├── fetch_filings.py            # SEC EDGAR 10-K text (12 US stocks) → filings/*.txt
 │   ├── fetch_news.py               # 6 news categories via NewsAPI → news.parquet
-│   ├── fetch_macro.py              # 4 FRED macro indicators → macro.parquet
-│   └── fetch_reddit.py             # (deferred — Reddit API access pending)
+│   └── fetch_macro.py              # 4 FRED macro indicators → macro.parquet
 ├── dbt/                            # Phase 3 — transformations on DuckDB
-│   ├── dbt_project.yml
-│   ├── profiles.yml                # DuckDB connection (no secrets)
-│   ├── packages.yml                # dbt_utils
-│   └── models/
-│       ├── staging/                # stg_prices, stg_news, stg_macro (+ _sources.yml, tests)
-│       ├── intermediate/           # int_price_features, int_sentiment_daily (+ tests)
-│       └── marts/                  # fct_daily_signals (+ tests)
+│   └── models/  staging/ · intermediate/ · marts/   (+ _sources.yml, tests)
 ├── pipelines/flows/
 │   └── daily_pipeline.py           # Phase 3 — Prefect flow: ingest → sentiment → dbt run → test
 ├── ml/                             # Phase 4 — model training + evaluation
-│   ├── train_volatility.py         # HAR-RV volatility forecast (beats naive)
+│   ├── train_volatility.py         # HAR-RV volatility forecast (the reliable one)
 │   ├── train_prophet.py            # Prophet price forecast (illustrative) → forecasts.parquet
 │   ├── train_sentiment.py          # FinBERT scoring → news_scored.parquet
 │   ├── train_anomaly.py            # Isolation Forest → anomalies.parquet
-│   └── evaluate.py                 # benchmarks vs naive → evaluation_metrics.json
-├── ai/                             # Phase 5 — RAG, MCP server, agent
+│   └── evaluate.py                 # honest benchmarks vs naive → evaluation_metrics.json
+├── ai/                             # Phase 5 + assistant
 │   ├── rag_pipeline.py             # clean + chunk + embed SEC filings → Qdrant
 │   ├── mcp_server.py               # MCP server: 4 tools over the data layers
 │   ├── prompts.py                  # analyst system prompt + honesty rules
-│   └── agent.py                    # LangGraph analyst agent (Claude Haiku)
-├── serving/                        # Phase 6 — FastAPI + Streamlit
+│   ├── agent.py                    # LangGraph analyst agent (fixed-flow report, now live)
+│   └── assistant.py                # conversational tool-using assistant (powers the /ask chat)
+├── serving/                        # Phase 6 — the live app
+│   ├── api.py                      # FastAPI backend + 3-hourly background scheduler
+│   ├── dashboard.py                # Streamlit 4-tab dashboard
+│   ├── live_compute.py             # live price / forecast / anomalies (yfinance, cached, fallback)
+│   └── live_news.py                # live news / sentiment (NewsAPI + FinBERT, cached, fallback)
+├── .streamlit/config.toml          # dashboard theme
 ├── data/                           # (gitignored) raw + processed data
 │   ├── raw/                        # Parquet files + filings/ text
 │   └── processed/                  # finsight.duckdb + ML output parquets
-├── docker-compose.yml              # Postgres + Qdrant (used Phase 5+)
+├── docker-compose.yml              # Postgres + Qdrant
 ├── tests/                          # pytest unit tests
 ├── .env / .env.example             # API keys (.env is gitignored)
 ├── requirements.txt
@@ -106,7 +155,7 @@ finsight-ai/
 
 ## Setup
 
-**Requirements:** Python 3.13, [uv](https://docs.astral.sh/uv/), and Docker Desktop with WSL 2.
+**Requirements:** Python 3.13, [uv](https://docs.astral.sh/uv/), and Docker Desktop (for Qdrant, used by the Analyst/filings features).
 
 ```powershell
 # 1. Clone and enter
@@ -115,218 +164,243 @@ cd finsight-ai
 
 # 2. Create the virtual environment and install deps
 uv venv
-.venv\Scripts\activate          # PowerShell  (use: source .venv/bin/activate on mac/linux)
+.venv\Scripts\activate          # PowerShell  (mac/linux: source .venv/bin/activate)
 uv pip install -r requirements.txt
 
 # 3. Configure API keys
 cp .env.example .env            # then fill in real values in .env
 
-# 4. Fetch the dbt package dependency
+# 4. (once) fetch the dbt package + embed SEC filings for the Analyst
 dbt deps --project-dir dbt --profiles-dir dbt
+docker compose up -d qdrant
+python ai/rag_pipeline.py
 ```
 
 ### API keys
 
 | Key (`.env`) | Source | Needed for | Free tier |
 |--------------|--------|-----------|-----------|
-| `NEWSAPI_KEY` | newsapi.org | news ingestion | 100 req/day |
+| `NEWSAPI_KEY` | newsapi.org | live news & sentiment | 100 req/day |
 | `FRED_KEY` | fred.stlouisfed.org | macro ingestion | unlimited |
-| `SEC_USER_AGENT` | (your name + email) | SEC EDGAR etiquette | n/a — header only |
-| `REDDIT_CLIENT_ID` / `REDDIT_SECRET` / `REDDIT_USER_AGENT` | reddit.com/prefs/apps | (deferred) Reddit | 100 req/min |
-| `ANTHROPIC_API_KEY` | console.anthropic.com | Phase 5 analyst agent (Claude Haiku) | ~$1/1M in, $5/1M out |
+| `SEC_USER_AGENT` | your name + email | SEC EDGAR etiquette | header only |
+| `ANTHROPIC_API_KEY` | console.anthropic.com | the AI analyst + chat (Claude Haiku) | ~$1/1M in, $5/1M out |
 
-`yfinance`, `SEC EDGAR`, and `GDELT` need no key. `OPENAI_API_KEY` is unused (the
-guide's default; this build uses Claude instead). `.env` is gitignored — keys are never committed.
-
----
-
-## Phase 2 — Data ingestion
-
-Ingestion scripts pull raw data from external APIs and land it **as-is** (no
-cleaning — that is dbt's job). Tabular sources are written in **tidy long format**
-(one row per entity + date) with an `ingested_at` audit timestamp. All outputs go
-to `data/raw/` (gitignored).
-
-| Script | Source | Output | Shape (approx.) |
-|--------|--------|--------|-----------------|
-| `fetch_prices.py` | yfinance | `data/raw/prices.parquet` | ~29K rows · 25 tickers · daily OHLCV since 2022-01-01 |
-| `fetch_filings.py` | SEC EDGAR | `data/raw/filings/*.txt` | 12 latest 10-K filings (~6 MB) |
-| `fetch_news.py` | NewsAPI | `data/raw/news.parquet` | ~580 articles · 6 categories · last ~30 days |
-| `fetch_macro.py` | FRED | `data/raw/macro.parquet` | ~340 obs · 4 series (fed rate, CPI, unemployment, GDP) since 2018 |
-
-**The 25 assets:** 12 US stocks (NVDA, AAPL, MSFT, AMZN, GOOGL, META, TSLA, JPM,
-XOM, NFLX, AMD, BRK-B) · 3 crypto (BTC, ETH, SOL) · 4 commodities (WTI oil, gold,
-silver, natural gas) · 4 country indices (Nifty 50, FTSE 100, DAX, Nikkei 225) ·
-2 benchmarks (S&P 500, Nasdaq Composite).
-
-**The 6 news categories:** geopolitical, commodities, crypto, country-specific,
-macro, general market. Queries are anchored to a finance context and matched on
-title + description to keep off-topic articles out.
+`yfinance` and `SEC EDGAR` need no key. Without `NEWSAPI_KEY` the app still runs —
+news/sentiment just fall back to the last stored data.
 
 ---
 
-## Phase 3 — Data engineering
+## ▶️ Running the dashboard (the main way to use it)
 
-dbt transforms the raw Parquet into clean, tested, ML-ready tables, using DuckDB
-as the query engine (it reads Parquet directly — no load step). Output is a single
-DuckDB database at `data/processed/finsight.duckdb`.
-
-**Model layers:**
-
-| Layer | Models | Materialization | Purpose |
-|-------|--------|-----------------|---------|
-| **staging** | `stg_prices`, `stg_news`, `stg_macro` | view | 1:1 cleaning — cast types, drop nulls, de-duplicate |
-| **intermediate** | `int_price_features`, `int_sentiment_daily` | view | feature engineering (window functions); daily news aggregates |
-| **marts** | `fct_daily_signals` | table | wide ML-ready table, one row per ticker per day |
-
-**`int_price_features`** computes per-ticker `daily_return`, `ma20`, `ma50`, and
-`volatility_20d` via SQL window functions.
-
-**`fct_daily_signals`** joins price features with macro context (attached via an
-**ASOF join** so each daily row carries the latest macro value released on or
-before that date) and daily news context, including `news_avg_sentiment` (filled
-by the Phase 4 FinBERT model).
-
-**Data-quality tests (21, all passing):** `not_null` on key columns, composite
-`unique` on `(ticker, date)` / `(series_id, date)`, and `accepted_values` on the
-news category. Run automatically after every build.
-
-**Infrastructure:** `docker-compose.yml` defines PostgreSQL + Qdrant. They are not
-needed for the dbt work (which runs on DuckDB) and are used from Phase 5 onward:
+You need **two** processes: the **API** (does the live fetching) and the **dashboard**
+(the display). Open two terminals:
 
 ```powershell
-docker compose up -d        # start
-docker compose ps           # status
-docker compose stop         # stop (data is kept)
+# Terminal 1 — the API (also runs the 3-hourly background refresh)
+.venv\Scripts\python.exe -m uvicorn serving.api:app --port 8000
+
+# Terminal 2 — the dashboard
+.venv\Scripts\streamlit.exe run serving/dashboard.py --server.port 8501
 ```
 
----
+Then open **http://localhost:8501**.
 
-## Phase 4 — Machine learning
-
-Four models, each tracked in MLflow. Every forecasting model is **benchmarked
-against the naive baseline it must beat** — accuracy is reported honestly.
-
-| Model | Script | What it does | Result |
-|-------|--------|--------------|--------|
-| **HAR-RV volatility** | `ml/train_volatility.py` | forecasts next-week realized volatility | **beats naive on 22/25 assets** — real predictive edge |
-| **Prophet price** | `ml/train_prophet.py` | 7-day price forecast + confidence bands | illustrative only (see below) |
-| **FinBERT sentiment** | `ml/train_sentiment.py` | scores news sentiment (batched, CPU) | fills `news_avg_sentiment` |
-| **Isolation Forest** | `ml/train_anomaly.py` | flags unusual market behaviour | 2% flagged; rediscovers FTX crash, earnings spikes |
-
-**The honest forecasting story.** Price *levels* are close to a random walk, so a
-naive "next week = today" baseline is hard to beat — and in a rolling backtest
-Prophet **does not beat it** (median MAPE 4.6% vs naive 2.9%, 0/25 wins). Prophet
-is kept for the dashboard's price *visualisation* (trend/seasonality + confidence
-bands), not as a predictive edge. Forecasts carry a `high_uncertainty` flag
-(MAPE > 15%) so volatile assets are never shown as trustworthy.
-
-Volatility, by contrast, **clusters and is genuinely predictable**, so the
-**HAR-RV** model (realized vol over 5/22/66-day windows) beats naive vol-persistence
-on **22/25 assets** — the project's forecast with real edge. (Absolute MAPE on
-volatility is high for everyone, ~50%, because realized vol is intrinsically noisy;
-the meaningful result is beating the baseline.)
-
-`ml/evaluate.py` reruns all benchmarks and writes `evaluation_metrics.json`.
-Models train separately from the daily data pipeline (retraining on every refresh
-would be wasteful), and never go in git — only the MLflow registry.
+- The dashboard **only displays**; the API **does the fetching** — so both must be running.
+- Data caches are **in-memory**, so a fresh start always fetches **live** (never stale).
+- The **Analyst tab and filings search** also need Docker/Qdrant up (`docker compose up -d qdrant`).
+- The refresh interval is configurable: set `FINSIGHT_LIVE_TTL` (seconds) before starting the API.
 
 ---
 
-## Phase 5 — AI engineering
+## Phase 2 — Data ingestion (getting the raw data)
 
-A conversational analyst that grounds its answers in primary-source SEC filings
-and the platform's own models.
+Scripts pull raw data from public APIs and save it **as-is** (cleaning is dbt's job).
+Everything lands in `data/raw/` (gitignored).
 
-**1. RAG over SEC filings** (`ai/rag_pipeline.py`) — cleans the inline-XBRL noise
-out of the 10-Ks, token-chunks the narrative (240 tokens to fit the embedder),
-embeds with `all-MiniLM-L6-v2` (384-dim, CPU), and upserts ~5K chunks into Qdrant.
+| Script | Source | Output |
+|--------|--------|--------|
+| `fetch_prices.py` | yfinance | daily OHLCV for 25 tickers since 2022 → `prices.parquet` |
+| `fetch_filings.py` | SEC EDGAR | 12 latest 10-K annual reports → `filings/*.txt` |
+| `fetch_news.py` | NewsAPI | ~580 articles across 6 categories → `news.parquet` |
+| `fetch_macro.py` | FRED | fed rate, CPI, unemployment, GDP → `macro.parquet` |
 
-**2. MCP server** (`ai/mcp_server.py`) — an official-SDK MCP server exposing 4 tools,
-each reading a different data layer. Works with the agent below *and* any MCP client
-(e.g. Claude Desktop):
+**The 25 assets:** 12 US stocks (NVDA, AAPL, MSFT, AMZN, GOOGL, META, TSLA, JPM, XOM,
+NFLX, AMD, BRK-B) · 3 crypto (BTC, ETH, SOL) · 4 commodities (oil, gold, silver, natural
+gas) · 4 country indices (Nifty 50, FTSE 100, DAX, Nikkei 225) · 2 benchmarks (S&P 500, Nasdaq).
 
-| Tool | Source |
-|------|--------|
-| `get_stock_price` | `fct_daily_signals` (DuckDB) |
-| `get_sentiment_score` | `int_sentiment_daily` (market/category-level) |
-| `run_forecast` | price + volatility forecast parquets |
-| `search_filings` | Qdrant RAG index |
-
-**3. LangGraph agent** (`ai/agent.py` + `ai/prompts.py`) — a `StateGraph`
-(`fetch_price → fetch_sentiment → fetch_forecast → search_filings → generate_report`)
-whose final node calls **Claude Haiku** to synthesize a structured report.
-
-**The honesty constraints carry through to the report.** The system prompt forces
-the agent to present the price forecast as *illustrative only* (it doesn't beat
-naive), lead with the *volatility* forecast (the model with real edge), flag
-high-uncertainty assets, treat sentiment as market-level, and ground every filing
-claim in retrieved text — verified on both a US stock (NVDA) and a no-filing crypto
-asset (SOL-USD). Requires `ANTHROPIC_API_KEY` and a running Qdrant.
+**The 6 news categories:** geopolitical, commodities, crypto, country, macro, general market.
 
 ---
 
-## Running the pipeline
+## Phase 3 — Data engineering (cleaning & shaping)
 
-**Everything at once (recommended)** — the Prefect flow runs all ingestion in
-parallel, then `dbt run`, then `dbt test`:
+**dbt** turns the raw Parquet into clean, tested, ML-ready tables, using **DuckDB**
+as the engine (it reads Parquet directly — no load step). Output: one database at
+`data/processed/finsight.duckdb`.
+
+| Layer | Models | Purpose (plain words) |
+|-------|--------|-----------------------|
+| **staging** | `stg_prices`, `stg_news`, `stg_macro` | fix types, drop bad rows, de-duplicate |
+| **intermediate** | `int_price_features`, `int_sentiment_daily` | build features (returns, moving averages, 20-day volatility); daily news averages |
+| **marts** | `fct_daily_signals` | one wide, ML-ready row per ticker per day |
+
+**21 data-quality tests** (not-null, unique `(ticker, date)`, valid categories) run
+after every build. **Prefect** ties it together into one daily flow: *ingest → score
+sentiment → dbt run → dbt test*. **Docker** provides PostgreSQL + Qdrant.
 
 ```powershell
-python pipelines/flows/daily_pipeline.py
+python pipelines/flows/daily_pipeline.py        # run the whole pipeline once
 ```
-
-To run on a schedule (6pm weekdays), see the `__main__` block in
-`pipelines/flows/daily_pipeline.py` (`daily_pipeline.serve(cron="0 18 * * 1-5")`).
-
-**Or run pieces manually:**
-
-```powershell
-# Ingest a single source
-python ingestion/fetch_prices.py
-
-# Build / test the dbt models
-dbt run  --project-dir dbt --profiles-dir dbt
-dbt test --project-dir dbt --profiles-dir dbt
-
-# Train models (needs MLflow running: mlflow ui --backend-store-uri sqlite:///mlflow.db)
-python ml/train_sentiment.py     # FinBERT (run before dbt if rebuilding sentiment)
-python ml/train_volatility.py    # HAR-RV volatility
-python ml/train_prophet.py       # Prophet price forecast
-python ml/train_anomaly.py       # Isolation Forest
-python ml/evaluate.py            # honest benchmarks vs naive
-
-# AI layer (needs Qdrant running: docker compose up -d qdrant, and ANTHROPIC_API_KEY)
-python ai/rag_pipeline.py        # embed SEC filings into Qdrant (run once)
-python ai/agent.py NVDA          # run the analyst agent on a ticker
-```
-
-### Inspect the data
-
-```python
-import duckdb
-# Raw Parquet:
-duckdb.sql("SELECT * FROM 'data/raw/prices.parquet' LIMIT 10").df()
-# Modeled tables (the dbt output):
-con = duckdb.connect("data/processed/finsight.duckdb", read_only=True)
-con.sql("SELECT * FROM fct_daily_signals WHERE ticker='NVDA' ORDER BY date DESC LIMIT 5").df()
-```
-
-Filings are plain text — open any `data/raw/filings/*.txt` directly.
 
 ---
 
-## Known follow-ups (tracked for later phases)
+## Phase 4 — Machine learning (the models)
 
-- **Reddit ingestion** is deferred pending Reddit Data API access; `fetch_reddit.py`
-  plugs in without touching other code once available.
-- **Price forecasting** (Prophet) is illustrative only — it does not beat naive
-  persistence (prices are a random walk). The model with real edge is the HAR-RV
-  **volatility** forecast. A future option is forecasting return *direction* or
-  switching Prophet to a damped/log-return formulation.
-- **News history** is limited to ~30 days by NewsAPI's free tier; the Prefect flow
-  refreshes it on each run.
-- **The agent imports the MCP tools directly** (they are the same functions the MCP
-  server registers) rather than connecting over stdio — simpler and fully testable;
-  the standalone `mcp_server.py` still runs as a real MCP server for external clients.
-- **Phase 6 (dashboard + deploy)** is next: a Streamlit 4-tab UI (Overview / Forecast
-  / News / Analyst) plus a FastAPI backend.
+Four models, each tracked in **MLflow**, and each **benchmarked against the simple
+baseline it must beat**. This is where the project's honesty comes from.
+
+| Model | What it does | Honest result |
+|-------|--------------|---------------|
+| **HAR-RV volatility** (`train_volatility.py`) | forecasts next-week "jumpiness" | ✅ **beats naive on 22/25 assets** — real edge |
+| **Prophet price** (`train_prophet.py`) | 7-day price forecast + range | ⚠️ **illustrative only** — does *not* beat naive |
+| **FinBERT sentiment** (`train_sentiment.py`) | scores each news headline −1…+1 | powers all sentiment |
+| **Isolation Forest** (`train_anomaly.py`) | flags unusual trading days | ~2% flagged; catches real shocks |
+
+**The honest forecasting story (important):** short-term prices are basically a
+*random walk*, so "next week = today" is very hard to beat — and Prophet **doesn't
+beat it**. So the price forecast is kept only to *visualise* trend/seasonality and is
+labelled **illustrative** everywhere. **Volatility**, on the other hand, *clusters* and
+**is** predictable — so the HAR-RV model genuinely beats the baseline. Across the app,
+volatility is presented as the trustworthy signal and price as illustrative.
+
+---
+
+## Phase 5 — AI engineering (grounded analysis)
+
+An analyst that grounds its answers in **primary-source SEC filings** and the
+platform's own models.
+
+1. **RAG over SEC filings** (`ai/rag_pipeline.py`) — cleans the 10-Ks, splits them into
+   240-token chunks, embeds with `all-MiniLM-L6-v2`, and stores ~5K chunks in **Qdrant**
+   for semantic search.
+2. **MCP server** (`ai/mcp_server.py`) — 4 tools (`get_stock_price`, `get_sentiment_score`,
+   `run_forecast`, `search_filings`) usable by the agent *and* any MCP client (e.g. Claude Desktop).
+3. **LangGraph agent** (`ai/agent.py`) — a fixed flow (price → sentiment → forecast →
+   filings → write-up) that ends with **Claude Haiku** writing a structured report. In
+   Phase 6 its data was switched to the **live** layer, so reports match the dashboard.
+
+The report obeys the same **honesty rules**: price forecast = illustrative, volatility =
+the real signal, sentiment = market-wide (not per-asset), every filing claim quoted from
+retrieved text.
+
+---
+
+## Phase 6 — Serving: the live app
+
+This phase makes everything **live** and puts it behind a real UI.
+
+**The live compute layer** (`serving/live_compute.py`, `serving/live_news.py`) re-runs
+the Phase-4/5 logic on **fresh** data on demand:
+- Pulls the latest history from **yfinance** and recomputes price, moving averages,
+  20-day volatility, the **Prophet** 7-day forecast, the **HAR-RV** volatility forecast,
+  and **Isolation-Forest** anomalies — anchored to *today*.
+- Pulls fresh **NewsAPI** headlines and re-scores them with **FinBERT** for live sentiment.
+- Everything is **cached** (default 3 hours) and **falls back to the stored pipeline
+  output** if a live fetch fails — so the app never blanks.
+- The price forecast respects each asset's real trading calendar (stocks skip weekends;
+  crypto trades 7 days a week).
+
+**The FastAPI backend** (`serving/api.py`) exposes it all as simple JSON endpoints
+(prices, forecast, anomalies, live quote, ticker tape, sentiment, news, the AI report,
+and the chat assistant). It also runs a **background scheduler**: on startup and then
+every 3 hours it refreshes all the live data **on its own** — so it stays fresh even
+when nobody has the dashboard open.
+
+**The Streamlit dashboard** (`serving/dashboard.py`) is the 4-tab UI described in
+*"What you can do"* above. Design goals throughout: **plain-English** labels, tooltips,
+a consistent **0–100 sentiment scale**, **low-sample data faded** so noisy readings can't
+masquerade as solid signal, and the **illustrative-vs-reliable** distinction shown
+everywhere.
+
+**The conversational assistant** (`ai/assistant.py`) powers the Analyst tab: a
+tool-using Claude agent that can call the live tools (price, forecast, anomalies,
+sentiment, news, filings, cross-asset compare) to answer free-form questions. It works
+for **any** real ticker, answers **any finance** question, and politely **declines
+off-topic** questions.
+
+**Extras:** the AI report exports to **PDF** (via xhtml2pdf); the ticker tape and KPIs
+show live timestamps; the whole UI is theme-styled and responsive.
+
+---
+
+## The honesty framework
+
+Most finance demos over-promise. This one is built the other way: the interface is
+designed to tell you how much to trust each number.
+
+- Price forecasts are labelled *illustrative* wherever they appear, because they don't
+  beat a naive baseline. A price target is never dressed up as reliable.
+- Volatility is the highlighted signal, because it measurably does beat its baseline.
+- Every forecast shows its own error (MAPE) next to a model-vs-naive scorecard, so you
+  can see the evidence rather than take the number on faith.
+- Sentiment shows its sample size. Scores built on a handful of articles are faded and
+  flagged as less reliable.
+- Live and stored data are always distinguished, and the app degrades to stored data
+  rather than failing.
+- The assistant won't give buy or sell advice — it explains the data instead.
+
+## What it doesn't do
+
+Being clear about the boundaries is part of the same principle.
+
+**Modelling.** Short-term price forecasting has no real edge — prices behave like a random
+walk over days, so the Prophet forecast doesn't beat a "tomorrow = today" baseline. It's
+kept only to picture the recent trend, never as a target. Volatility does beat its
+baseline (that's the point of HAR-RV), but it isn't precise: realised volatility is noisy,
+and absolute error stays high (~50% MAPE). Anomaly detection is unsupervised, so a flag
+means "worth a look," not a confirmed event — there's no labelled ground truth.
+
+**Data.** Prices come from yfinance, an unofficial feed delayed about 15 minutes — fine for
+analysis, not for trading. News is shallow: NewsAPI's free tier caps out around 30 days of
+history and 100 requests a day across a limited set of outlets, sentiment is scored on
+headlines rather than full articles, and it's market-wide by category rather than
+per-asset. FinBERT can also miss sarcasm or nuance. SEC coverage is annual and US-only —
+RAG runs over twelve US companies' 10-Ks, which go stale between yearly filings, with no
+quarterly reports or international filings.
+
+**System.** It runs locally: caches live in memory and clear on restart, and the 3-hour
+refresher runs inside the API process, so it isn't a true background job if the API is
+down. The first request for a new asset is slow — fitting Prophet takes a few seconds and
+the first news refresh runs FinBERT for around thirty — but the cache and scheduler hide
+that for most views. The cross-asset "most volatile" ranking reads the stored daily
+snapshot for speed, while per-asset views are fully live. And the forecast calendar skips
+weekends but not exchange holidays, so a holiday can still show up as a forecast day.
+
+**Scope.** This is not financial advice and it isn't connected to any brokerage — it
+explains data, it doesn't trade or recommend trades. The assistant is grounded in tools,
+but like any LLM it can still be wrong.
+
+## Future scope
+
+Rough order of value.
+
+**Deployment.** Move off localhost — Streamlit Cloud or a container host, a hosted API, and
+Qdrant Cloud. Swap the in-memory cache for Redis and the in-process refresher for a real
+scheduled job (Celery or cron) that survives the API going down. Add monitoring for live
+model error and data drift.
+
+**Modelling.** Reframe forecasting around something predictable — return *direction* or a
+*probability* rather than a price — and try gradient-boosted or sequence models (LightGBM,
+N-BEATS, Temporal Fusion Transformer) with macro and sentiment features. The honest
+benchmarking stays either way. Add per-exchange holiday calendars for exact trading days,
+and wire automated retraining into MLflow with versioning.
+
+**Data & AI.** Deeper sentiment — score full articles, add sources (RSS, GDELT, Reddit),
+and move to per-asset sentiment with entity linking. Richer RAG — more companies,
+quarterly 10-Qs, earnings-call transcripts, international filings. And intraday streaming
+over WebSockets instead of the delayed daily feed.
+
+**Product.** Portfolios, watchlists, and alerts on anomalies or sentiment shifts; user
+accounts with saved conversations; and a backtesting or paper-trading module to test ideas
+without real money.
+

@@ -66,15 +66,35 @@ class AnalystState(TypedDict, total=False):
 
 
 def node_fetch_price(state: AnalystState) -> dict:
-    return {"price": get_stock_price(state["ticker"])}
+    """Live price/features (yfinance) so the report matches the dashboard; stored fallback."""
+    ticker = state["ticker"]
+    try:
+        from serving.live_compute import live_prices
+        lt = live_prices(ticker)["latest"]
+        rnd = lambda v, d: (round(float(v), d) if v is not None else None)  # noqa: E731
+        return {"price": {"ticker": ticker.upper(), "date": str(lt["date"])[:10],
+                          "close": rnd(lt["close"], 2), "daily_return": rnd(lt["daily_return"], 4),
+                          "ma20": rnd(lt["ma20"], 2), "ma50": rnd(lt["ma50"], 2),
+                          "volatility_20d": rnd(lt["volatility_20d"], 4)}}
+    except Exception:  # noqa: BLE001
+        return {"price": get_stock_price(ticker)}
 
 
 def node_fetch_sentiment(state: AnalystState) -> dict:
-    return {"sentiment": get_sentiment_score(category_for_ticker(state["ticker"]))}
+    cat = category_for_ticker(state["ticker"])
+    try:
+        from serving.live_news import live_sentiment
+        return {"sentiment": live_sentiment(cat)}
+    except Exception:  # noqa: BLE001
+        return {"sentiment": get_sentiment_score(cat)}
 
 
 def node_fetch_forecast(state: AnalystState) -> dict:
-    return {"forecast": run_forecast(state["ticker"])}
+    try:
+        from serving.live_compute import live_forecast
+        return {"forecast": live_forecast(state["ticker"])}
+    except Exception:  # noqa: BLE001
+        return {"forecast": run_forecast(state["ticker"])}
 
 
 def node_search_filings(state: AnalystState) -> dict:
