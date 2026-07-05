@@ -173,7 +173,7 @@ python-multipart==0.0.32
 python-slugify==8.0.4
 pytimeparse==1.1.8
 pytz==2026.2
-pywin32==312
+pywin32==312 ; sys_platform == "win32"
 pyyaml==6.0.3
 qdrant-client==1.18.0
 readchar==4.2.2
@@ -233,7 +233,7 @@ wcwidth==0.8.1
 websockets==16.0
 werkzeug==3.1.8
 whenever==0.10.0
-win32-setctime==1.2.0
+win32-setctime==1.2.0 ; sys_platform == "win32"
 xxhash==3.7.0
 yarl==1.24.2
 yfinance==1.4.1
