@@ -10,6 +10,10 @@ pinned: true
 
 # FinSight AI
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Hugging_Face_Spaces-FFD21E?style=for-the-badge)](https://sanjanaaa28-finsight-ai.hf.space)
+
+**▶️ Live demo:** https://sanjanaaa28-finsight-ai.hf.space
+
 ## Overview
 
 FinSight AI is an end-to-end financial-intelligence platform that combines market
