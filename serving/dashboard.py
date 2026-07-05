@@ -69,18 +69,18 @@ def inject_css() -> None:
       @media (min-width: 993px) {
         section[data-testid="stSidebar"] { width:236px !important; min-width:236px !important;
           transform:none !important; visibility:visible !important; }
-        [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"] {
+        [data-testid="stSidebarCollapseButton"], [data-testid="stExpandSidebarButton"] {
           display:none !important; }
       }
       /* Phones / small tablets: let Streamlit collapse the sidebar into a slide-in
-         drawer, keep its expand/collapse toggle reachable, and reclaim body padding. */
+         drawer, and surface its open/close controls (which live in the header). */
       @media (max-width: 992px) {
         section[data-testid="stSidebar"] { min-width:0 !important; }
-        [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"] {
-          display:flex !important; visibility:visible !important; }
-        /* Re-show a minimal, transparent header so the drawer toggle is reachable. */
+        /* Re-show a minimal, transparent header so the "open sidebar" button shows. */
         [data-testid="stHeader"] { display:flex !important; height:auto !important;
-          background:transparent !important; }
+          visibility:visible !important; background:transparent !important; }
+        [data-testid="stExpandSidebarButton"], [data-testid="stSidebarCollapseButton"] {
+          display:flex !important; visibility:visible !important; opacity:1 !important; }
         [data-testid="stAppViewContainer"] > .main { padding-top:0 !important; }
         .block-container { padding:1rem 1rem 2rem !important; }
       }
