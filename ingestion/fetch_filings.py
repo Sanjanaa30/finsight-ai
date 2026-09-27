@@ -27,6 +27,12 @@ US_STOCKS = [
     "TSLA", "JPM", "XOM", "NFLX", "AMD", "BRK-B",
 ]
 
+# Predecessor CIKs to try when a ticker's current registrant has no 10-K yet.
+# XOM: in 2026 the ticker moved to successor issuer ExxonMobil Holdings Corp
+# (8-K12B); until it files its first 10-K, the latest one is under the old
+# Exxon Mobil Corp CIK.
+PREDECESSOR_CIKS = {"XOM": [34088]}
+
 # SEC asks for a UA like "Sample Company AdminContact@example.com". Override via
 # .env so requests are attributed to you; the fallback keeps the script runnable.
 USER_AGENT = os.getenv("SEC_USER_AGENT", "finsight-ai research bot contact@finsight-ai.dev")
@@ -34,6 +40,7 @@ HEADERS = {"User-Agent": USER_AGENT}
 
 TICKER_MAP_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
+PAGE_URL = "https://data.sec.gov/submissions/{name}"
 ARCHIVE_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{doc}"
 
 SEC_RATE_LIMIT_SECONDS = 0.3  # SEC allows <10 req/s; stay well under
@@ -50,17 +57,35 @@ def load_ticker_to_cik() -> dict[str, int]:
     return {row["ticker"].upper(): int(row["cik_str"]) for row in resp.json().values()}
 
 
+def _find_10k(filings: dict) -> tuple[str, str, str] | None:
+    """Newest 10-K in one columnar block of filings (newest-first), or None."""
+    for form, accession, doc, filed in zip(
+        filings["form"], filings["accessionNumber"],
+        filings["primaryDocument"], filings["filingDate"],
+    ):
+        if form == "10-K":
+            return accession.replace("-", ""), doc, filed
+    return None
+
+
 def latest_10k(cik: int) -> tuple[str, str, str] | None:
     """Return (accession_no_dashes, primary_document, filing_date) for newest 10-K."""
     resp = requests.get(SUBMISSIONS_URL.format(cik=cik), headers=HEADERS, timeout=30)
     resp.raise_for_status()
-    recent = resp.json()["filings"]["recent"]
-    for form, accession, doc, filed in zip(
-        recent["form"], recent["accessionNumber"],
-        recent["primaryDocument"], recent["filingDate"],
-    ):
-        if form == "10-K":
-            return accession.replace("-", ""), doc, filed
+    filings = resp.json()["filings"]
+    found = _find_10k(filings["recent"])
+    if found:
+        return found
+
+    # "recent" can be short for prolific filers (XOM's covers only a few months),
+    # so the last 10-K may sit in an older, paginated submissions file.
+    for page in filings.get("files", []):
+        time.sleep(SEC_RATE_LIMIT_SECONDS)
+        resp = requests.get(PAGE_URL.format(name=page["name"]), headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+        found = _find_10k(resp.json())
+        if found:
+            return found
     return None
 
 
@@ -70,7 +95,10 @@ def download_filing_text(cik: int, accession: str, doc: str) -> str:
     resp = requests.get(url, headers=HEADERS, timeout=60)
     resp.raise_for_status()
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    # Pass bytes, not resp.text: SEC sends no charset header, so requests would
+    # guess ISO-8859-1 and garble any raw UTF-8 (e.g. "•" -> "â€¢"). BeautifulSoup
+    # detects the real encoding from the document itself.
+    soup = BeautifulSoup(resp.content, "html.parser")
     for tag in soup(["script", "style"]):
         tag.decompose()
     text = soup.get_text(separator=" ")
@@ -91,6 +119,13 @@ def main() -> None:
 
         meta = latest_10k(cik)
         time.sleep(SEC_RATE_LIMIT_SECONDS)
+        for old_cik in PREDECESSOR_CIKS.get(ticker, []):
+            if meta is not None:
+                break
+            logger.info("{}: no 10-K under CIK {}, trying predecessor CIK {}", ticker, cik, old_cik)
+            cik = old_cik  # the archive URL must use the CIK that owns the filing
+            meta = latest_10k(cik)
+            time.sleep(SEC_RATE_LIMIT_SECONDS)
         if meta is None:
             logger.warning("{}: no 10-K found, skipping", ticker)
             continue
@@ -101,6 +136,11 @@ def main() -> None:
 
         out_path = OUTPUT_DIR / f"{ticker}_10K_{filed}.txt"
         out_path.write_text(text, encoding="utf-8")
+        # Keep only the newest 10-K per ticker so RAG never mixes fiscal years.
+        for old in OUTPUT_DIR.glob(f"{ticker}_10K_*.txt"):
+            if old != out_path:
+                old.unlink()
+                logger.info("{}: removed superseded filing {}", ticker, old.name)
         saved += 1
         logger.success("{}: saved 10-K filed {} ({:,} chars)", ticker, filed, len(text))
 

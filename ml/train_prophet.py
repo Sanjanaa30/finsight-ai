@@ -63,6 +63,18 @@ def _new_model() -> Prophet:
     return Prophet(daily_seasonality=False, weekly_seasonality=True, yearly_seasonality=True)
 
 
+def anchor_offset(forecast: pd.DataFrame, train: pd.DataFrame) -> float:
+    """Shift that makes Prophet's fitted curve pass through the last actual close.
+
+    Prophet forecasts from its smooth fitted curve, which can sit several % away from
+    the latest price after a sharp move. Adding the last residual keeps the model's
+    trend/seasonality but starts the path at the real price -- lower backtest error
+    than the raw curve on every asset tested.
+    """
+    fitted_last = float(forecast.loc[forecast["ds"] == train["ds"].max(), "yhat"].iloc[0])
+    return float(train["y"].iloc[-1]) - fitted_last
+
+
 def evaluate_mape(tdf: pd.DataFrame) -> float:
     """Holdout MAPE: train on all but the last HOLDOUT_DAYS, score on that window."""
     cutoff = tdf["ds"].max() - pd.Timedelta(days=HOLDOUT_DAYS)
@@ -75,7 +87,9 @@ def evaluate_mape(tdf: pd.DataFrame) -> float:
     model.fit(train)
     forecast = model.predict(model.make_future_dataframe(periods=HOLDOUT_DAYS + FORECAST_DAYS))
     merged = test.merge(forecast[["ds", "yhat"]], on="ds", how="inner")
-    return mape(merged["y"].to_numpy(), merged["yhat"].to_numpy()) if len(merged) else float("nan")
+    if not len(merged):
+        return float("nan")
+    return mape(merged["y"].to_numpy(), merged["yhat"].to_numpy() + anchor_offset(forecast, train))
 
 
 def fit_and_forecast(tdf: pd.DataFrame):
@@ -94,6 +108,7 @@ def fit_and_forecast(tdf: pd.DataFrame):
     future_only = forecast[forecast["ds"] > tdf["ds"].max()][
         ["ds", "yhat", "yhat_lower", "yhat_upper"]
     ].copy()
+    future_only[["yhat", "yhat_lower", "yhat_upper"]] += anchor_offset(forecast, tdf)
     return model, future_only, score
 
 

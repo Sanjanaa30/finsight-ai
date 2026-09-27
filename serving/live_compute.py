@@ -102,6 +102,17 @@ def _mape(actual: np.ndarray, predicted: np.ndarray) -> float:
     return float(np.mean(np.abs((actual[mask] - predicted[mask]) / actual[mask])) * 100)
 
 
+def _anchor_offset(fc: pd.DataFrame, train: pd.DataFrame) -> float:
+    """Shift that makes Prophet's fitted curve pass through the last actual close.
+
+    Prophet forecasts from its smooth fitted curve, which can sit several % away from
+    today's price after a sharp move. Adding the last residual keeps the model's
+    trend/seasonality but starts the path at the real price (mirrors train_prophet.py).
+    """
+    fitted_last = float(fc.loc[fc["ds"] == train["ds"].max(), "yhat"].iloc[0])
+    return float(train["y"].iloc[-1]) - fitted_last
+
+
 def _prophet_forecast(df: pd.DataFrame):
     """Holdout MAPE + naive baseline + full-history 7-day forecast (mirrors train_prophet.py).
 
@@ -125,7 +136,7 @@ def _prophet_forecast(df: pd.DataFrame):
         merged = test.merge(hc[["ds", "yhat"]], on="ds", how="inner")
         if len(merged):
             actual = merged["y"].to_numpy()
-            score = _mape(actual, merged["yhat"].to_numpy())
+            score = _mape(actual, merged["yhat"].to_numpy() + _anchor_offset(hc, train))
             # Naive baseline: "next week = last known price" (persistence).
             naive = _mape(actual, np.full(len(actual), float(train["y"].iloc[-1])))
 
@@ -134,7 +145,8 @@ def _prophet_forecast(df: pd.DataFrame):
     # weekend dates) -> forecast every day; stocks/indices are weekdays only -> business days.
     freq = "D" if (tdf["ds"].dt.weekday >= 5).mean() > 0.1 else "B"
     fc = m.predict(m.make_future_dataframe(periods=FORECAST_DAYS, freq=freq))
-    future = fc[fc["ds"] > tdf["ds"].max()][["ds", "yhat", "yhat_lower", "yhat_upper"]]
+    future = fc[fc["ds"] > tdf["ds"].max()][["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
+    future[["yhat", "yhat_lower", "yhat_upper"]] += _anchor_offset(fc, tdf)
     # Prophet's own trend component: average slope over the forecast horizon.
     trend = fc["trend"].to_numpy()
     trend_per_day = float((trend[-1] - trend[len(tdf) - 1]) / FORECAST_DAYS) if len(trend) > len(tdf) else 0.0
@@ -144,6 +156,8 @@ def _prophet_forecast(df: pd.DataFrame):
 def _har_vol(df: pd.DataFrame) -> dict | None:
     """Next-week realized-vol forecast (HAR-RV) -- mirrors train_volatility.py."""
     from sklearn.linear_model import LinearRegression
+
+    from ai.mcp_server import har_track_record
 
     s = df.set_index("date")["daily_return"].dropna()
     if len(s) < 150:
@@ -162,7 +176,8 @@ def _har_vol(df: pd.DataFrame) -> dict | None:
     pred = float(model.predict(latest)[0])
     return {"current": round(cur, 4), "predicted_next_week": round(pred, 4),
             "direction": "rising" if pred > cur else "falling",
-            "note": "HAR-RV model; beats naive baseline on 88% of assets (real edge)."}
+            "note": f"HAR-RV model; beats naive baseline on {har_track_record()} (real edge).",
+            "track_record": har_track_record()}
 
 
 def live_forecast(ticker: str) -> dict:

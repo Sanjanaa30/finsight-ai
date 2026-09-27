@@ -75,7 +75,7 @@ def get_forecast(ticker: str) -> dict:
             out["volatility_forecast"] = {"current_pct": round(v["current"] * 100, 2),
                                           "predicted_next_week_pct": round(v["predicted_next_week"] * 100, 2),
                                           "direction": v["direction"],
-                                          "note": "RELIABLE signal (HAR-RV beats naive on ~88% of assets)"}
+                                          "note": f"RELIABLE signal (HAR-RV beats naive on {v.get('track_record', 'most assets')})"}
         return out
     except Exception as e:  # noqa: BLE001
         return {"error": f"no forecast for '{ticker}': {e}"}

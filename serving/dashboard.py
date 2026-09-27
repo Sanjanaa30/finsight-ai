@@ -802,10 +802,11 @@ def render_overview(ticker: str) -> None:
 def render_forecast(ticker: str) -> None:
     asset_header(ticker)
     fc = api_get(f"/forecast/{ticker}")
-    st.info("**The volatility forecast (HAR-RV) is the signal with real predictive edge** "
-            "— it beats a naive baseline on ~88% of assets. The price forecast below is "
-            "**illustrative only** (short-term prices are a random walk).")
     vf = fc.get("volatility_forecast")
+    record = (vf or {}).get("track_record", "most assets")
+    st.info("**The volatility forecast (HAR-RV) is the signal with real predictive edge** "
+            f"— it beats a naive baseline on {record}. The price forecast below is "
+            "**illustrative only** (short-term prices are a random walk).")
     if vf:
         st.subheader("Volatility outlook (the real signal)")
         cur, pred = vf["current"], vf["predicted_next_week"]

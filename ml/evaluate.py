@@ -82,7 +82,10 @@ def price_backtest(tdf: pd.DataFrame) -> tuple[float, float]:
         if not len(merged):
             continue
         last = train["y"].iloc[-1]
-        prophet_s.append(mape(merged["y"].to_numpy(), merged["yhat"].to_numpy()))
+        # Same re-anchoring as the served forecast (train_prophet.anchor_offset):
+        # shift the fitted curve so it starts at the last actual close.
+        offset = last - float(fc.loc[fc["ds"] == train["ds"].max(), "yhat"].iloc[0])
+        prophet_s.append(mape(merged["y"].to_numpy(), merged["yhat"].to_numpy() + offset))
         naive_s.append(mape(merged["y"].to_numpy(), np.full(len(merged), last)))
     return (np.mean(prophet_s) if prophet_s else np.nan,
             np.mean(naive_s) if naive_s else np.nan)
@@ -183,8 +186,9 @@ def main() -> None:
     print("=" * 78)
     print(f"PRICE (Prophet)  : median MAPE {price['prophet_median_mape']}% vs naive "
           f"{price['naive_median_mape']}% -> beats naive {price['prophet_beats_naive']}/{price['n_total']}")
-    print(f"                   Wilcoxon p={price['wilcoxon_p']} -> NOT significantly better "
-          f"(price is a random walk; forecast is illustrative only)")
+    print(f"                   Wilcoxon p={price['wilcoxon_p']} -> "
+          f"{'significantly better' if price['wilcoxon_p'] < 0.05 else 'NOT significantly better'} "
+          f"(price is ~a random walk; forecast stays illustrative)")
     print(f"VOLATILITY (HAR) : median MAPE {vol['har_median_mape']}% vs naive "
           f"{vol['naive_median_mape']}% -> beats naive {vol['har_beats_naive']}/{vol['n_total']}")
     print(f"                   Wilcoxon p={vol['wilcoxon_p']}, binomial p={vol['binomial_p']} "

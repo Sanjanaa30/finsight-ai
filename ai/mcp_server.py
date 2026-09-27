@@ -12,6 +12,7 @@ The Phase 5 LangGraph agent calls these tools; any MCP client (e.g. Claude
 Desktop) can use them too.
 """
 
+import json
 import sys
 from pathlib import Path
 from typing import Optional
@@ -26,6 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DUCKDB_PATH = str(PROJECT_ROOT / "data" / "processed" / "finsight.duckdb")
 FORECASTS = str(PROJECT_ROOT / "data" / "processed" / "forecasts.parquet")
 VOL_FORECASTS = str(PROJECT_ROOT / "data" / "processed" / "volatility_forecasts.parquet")
+EVAL_METRICS = PROJECT_ROOT / "data" / "processed" / "evaluation_metrics.json"
 
 QDRANT_URL = "http://localhost:6333"
 COLLECTION = "filings"
@@ -46,6 +48,15 @@ def _embed(text: str) -> list[float]:
         from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer(EMBED_MODEL)
     return _model.encode(text).tolist()
+
+
+def har_track_record() -> str:
+    """HAR-RV's win rate vs naive from the latest ml/evaluate.py run, e.g. '23/25 assets (92%)'."""
+    try:
+        v = json.loads(EVAL_METRICS.read_text(encoding="utf-8"))["volatility_forecast"]
+        return f"{v['har_beats_naive']}/{v['n_total']} assets ({v['har_beats_naive'] / v['n_total']:.0%})"
+    except (OSError, ValueError, KeyError, ZeroDivisionError):
+        return "most assets"  # metrics missing -> stay truthful without a number
 
 
 def _qclient():
@@ -167,7 +178,8 @@ def run_forecast(ticker: str) -> dict:
             "current": round(cur, 4),
             "predicted_next_week": round(pred, 4),
             "direction": "rising" if pred > cur else "falling",
-            "note": "HAR-RV model; beats naive baseline on 88% of assets (real edge).",
+            "note": f"HAR-RV model; beats naive baseline on {har_track_record()} (real edge).",
+            "track_record": har_track_record(),
         }
     return out
 
