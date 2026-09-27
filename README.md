@@ -402,8 +402,6 @@ but like any LLM it can still be wrong.
 
 ## Future scope
 
-Rough order of value.
-
 **Deployment.** Move off localhost — Streamlit Cloud or a container host, a hosted API, and
 Qdrant Cloud. Swap the in-memory cache for Redis and the in-process refresher for a real
 scheduled job (Celery or cron) that survives the API going down. Add monitoring for live
